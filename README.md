@@ -19,6 +19,8 @@ Most identity-protection tooling reports it as a side effect of something else. 
 ## Screenshots
 
 > ⚠️ **All screenshots use synthetic data.** No real tenant, account, IP address or location appears anywhere in this repository. The accounts, domains and addresses shown are fabricated for illustration and use [RFC 5737](https://datatracker.ietf.org/doc/html/rfc5737) / [RFC 2606](https://datatracker.ietf.org/doc/html/rfc2606) reserved ranges where addresses are shown.
+>
+> The account names are invented, but only barely. If `svc-donotdelete`, `warehouse.allshifts` and `svc-temp-2019` look familiar, that is the point — every one of them is a finding that names itself.
 
 ### Overview &amp; Score
 
@@ -26,7 +28,7 @@ The triage queue. The **Drivers** column matters more than the number — it nam
 
 ![Overview and scorecard](docs/img/01-overview.png)
 
-Note the bottom row: a score of 38 driven *only* by `ip-fanout` — a field engineer on a mobile network, and weak on its own. Compare with the third row, where four independent indicators agree.
+`f.roadwarrior` scores 38 on `ip-fanout` alone — a field engineer on a mobile network, and almost certainly fine. `p.peregrine` scores 78 because four independent indicators agree. Same workbook, very different conversations.
 
 ### Concurrent Sessions
 
@@ -48,13 +50,15 @@ Three explicit tiers, with the constraint stated plainly rather than papered ove
 
 ![Password reuse tiers and panels](docs/img/04-pwreuse.png)
 
-The lockout panel is the one most often misread: a *small stable* set locking together is a shared credential cached in automation; a *large shifting* set is a password spray. Same panel, opposite conclusions.
+`svc-donotdelete` and `svc-alsodonotdelete` rotating together on 100% of cycles is not coincidence. The lockout panel below is the one most often misread: a *small stable* set locking together is a shared credential cached in automation; a *large shifting* set is a password spray. Same panel, opposite conclusions.
 
 ### Red-Team Tradecraft
 
 Credential theft and account sharing are the same telemetry viewed with different intent.
 
 ![Red-team tradecraft panels](docs/img/05-redteam.png)
+
+The honeytoken panel shows `ht-domainadmin-backup` being touched — a decoy named to be irresistible, and the only zero-false-positive signal in the workbook.
 
 ### Coverage &amp; Limits
 

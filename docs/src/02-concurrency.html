@@ -40,15 +40,15 @@ detail before escalating — VPN split-tunnelling and mobile hand-off both produ
 <table class="nowrap">
 <tr><th>UserPrincipalName</th><th>Persistence</th><th>Overlap windows</th><th>Max IPs</th>
     <th>Max countries</th><th>Days with overlap</th><th>First overlap</th><th>Last overlap</th></tr>
-<tr><td class="mono">wh.dispatch@contoso.com</td><td><span class="sev hi">Persistent - likely shared</span></td>
+<tr><td class="mono">warehouse.allshifts@contoso.com</td><td><span class="sev hi">Persistent - likely shared</span></td>
     <td class="val-hi">147</td><td class="val-hi">12</td><td>1</td><td>21</td><td>2026-09-03 06:12</td><td>2026-09-24 18:44</td></tr>
-<tr><td class="mono">svc-reporting@contoso.com</td><td><span class="sev hi">Persistent - likely shared</span></td>
+<tr><td class="mono">svc-donotdelete@contoso.com</td><td><span class="sev hi">Persistent - likely shared</span></td>
     <td class="val-hi">98</td><td class="val-hi">9</td><td>2</td><td>19</td><td>2026-09-03 01:00</td><td>2026-09-24 23:15</td></tr>
-<tr><td class="mono">a.nakamura@contoso.com</td><td><span class="sev md">Recurring - investigate</span></td>
+<tr><td class="mono">p.peregrine@contoso.com</td><td><span class="sev md">Recurring - investigate</span></td>
     <td class="val-md">22</td><td>6</td><td class="val-hi">4</td><td>7</td><td>2026-09-08 09:31</td><td>2026-09-23 14:02</td></tr>
-<tr><td class="mono">p.oyelaran@contoso.com</td><td><span class="sev md">Recurring - investigate</span></td>
+<tr><td class="mono">s.hotdesker@contoso.com</td><td><span class="sev md">Recurring - investigate</span></td>
     <td class="val-md">14</td><td>5</td><td>3</td><td>5</td><td>2026-09-11 08:55</td><td>2026-09-22 17:20</td></tr>
-<tr><td class="mono">m.delacroix@contoso.com</td><td><span class="sev lo">Sporadic</span></td>
+<tr><td class="mono">m.multitasker@contoso.com</td><td><span class="sev lo">Sporadic</span></td>
     <td>3</td><td>4</td><td>2</td><td>2</td><td>2026-09-17 13:40</td><td>2026-09-19 11:05</td></tr>
 </table>
 <div class="note">Persistence is the discriminator. A single overlapping window is an event; the same
@@ -58,19 +58,19 @@ account overlapping on 21 separate days is an arrangement.</div>
 <table class="nowrap">
 <tr><th>TimeGenerated</th><th>UserPrincipalName</th><th>Verdict</th><th>km/h</th><th>Distance km</th>
     <th>Elapsed h</th><th>From</th><th>To</th><th>App</th></tr>
-<tr><td>2026-09-23 14:02</td><td class="mono">a.nakamura@contoso.com</td>
+<tr><td>2026-09-23 14:02</td><td class="mono">p.peregrine@contoso.com</td>
     <td><span class="sev hi">Physically impossible - concurrent use or proxy</span></td>
     <td class="val-hi">28,410</td><td>9,470</td><td>0.333</td>
     <td>Osaka, JP</td><td>Frankfurt, DE</td><td>Office 365 Exchange Online</td></tr>
-<tr><td>2026-09-22 08:47</td><td class="mono">p.oyelaran@contoso.com</td>
+<tr><td>2026-09-22 08:47</td><td class="mono">s.hotdesker@contoso.com</td>
     <td><span class="sev hi">Physically impossible - concurrent use or proxy</span></td>
     <td class="val-hi">11,880</td><td>1,980</td><td>0.167</td>
     <td>Lagos, NG</td><td>London, GB</td><td>Microsoft Teams</td></tr>
-<tr><td>2026-09-21 19:33</td><td class="mono">a.nakamura@contoso.com</td>
+<tr><td>2026-09-21 19:33</td><td class="mono">p.peregrine@contoso.com</td>
     <td><span class="sev md">Impossible without flight - very likely shared</span></td>
     <td class="val-md">2,240</td><td>1,120</td><td>0.500</td>
     <td>Frankfurt, DE</td><td>Madrid, ES</td><td>SharePoint Online</td></tr>
-<tr><td>2026-09-19 11:05</td><td class="mono">m.delacroix@contoso.com</td>
+<tr><td>2026-09-19 11:05</td><td class="mono">m.multitasker@contoso.com</td>
     <td><span class="sev lo">Faster than commercial flight - review</span></td>
     <td>1,050</td><td>525</td><td>0.500</td>
     <td>Paris, FR</td><td>Brussels, BE</td><td>Azure Portal</td></tr>

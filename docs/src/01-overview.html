@@ -115,63 +115,63 @@ score as a triage queue, not a verdict.
   <th>Concur</th><th>OnPrem</th><th>Legacy</th>
 </tr>
 <tr>
-  <td class="mono">svc-reporting@contoso.com</td>
+  <td class="mono">svc-donotdelete@contoso.com</td>
   <td><span class="sc" style="background:#7d1420;color:#fff">92</span></td>
   <td><span class="band b1">1 - Critical</span></td>
   <td class="drv">concurrent-sessions(9), onprem-host-fanout(31), generic-name, weak-auth</td>
   <td>—</td><td>Yes</td><td>27</td><td>0</td><td>2</td><td>9</td><td>31</td><td>412</td>
 </tr>
 <tr>
-  <td class="mono">wh.dispatch@contoso.com</td>
+  <td class="mono">warehouse.allshifts@contoso.com</td>
   <td><span class="sc" style="background:#8f1f18;color:#fff">86</span></td>
   <td><span class="band b1">1 - Critical</span></td>
   <td class="drv">concurrent-sessions(12), device-fanout(11), ip-fanout(34)</td>
   <td>Logistics</td><td>No</td><td>34</td><td>11</td><td>1</td><td>12</td><td>4</td><td>0</td>
 </tr>
 <tr>
-  <td class="mono">a.nakamura@contoso.com</td>
+  <td class="mono">p.peregrine@contoso.com</td>
   <td><span class="sc" style="background:#9e3a14;color:#fff">78</span></td>
   <td><span class="band b1">1 - Critical</span></td>
   <td class="drv">geo-fanout(4), concurrent-sessions(6), entra-risk, token-replay(3)</td>
   <td>Finance</td><td>Yes</td><td>19</td><td>5</td><td>4</td><td>6</td><td>2</td><td>0</td>
 </tr>
 <tr>
-  <td class="mono">frontdesk.lobby@contoso.com</td>
+  <td class="mono">lobby.pleasedontshare@contoso.com</td>
   <td><span class="sc" style="background:#a85411;color:#fff">71</span></td>
   <td><span class="band b1">1 - Critical</span></td>
   <td class="drv">device-fanout(8), generic-name, weak-auth, ip-fanout(21)</td>
   <td>Facilities</td><td>No</td><td>21</td><td>8</td><td>1</td><td>3</td><td>0</td><td>168</td>
 </tr>
 <tr>
-  <td class="mono">p.oyelaran@contoso.com</td>
+  <td class="mono">s.hotdesker@contoso.com</td>
   <td><span class="sc" style="background:#a8680f;color:#fff">64</span></td>
   <td><span class="band b2">2 - High</span></td>
   <td class="drv">concurrent-sessions(5), geo-fanout(3), device-fanout(6)</td>
   <td>Sales</td><td>No</td><td>23</td><td>6</td><td>3</td><td>5</td><td>1</td><td>0</td>
 </tr>
 <tr>
-  <td class="mono">svc-backup01@contoso.com</td>
+  <td class="mono">svc-temp-2019@contoso.com</td>
   <td><span class="sc" style="background:#a8680f;color:#fff">61</span></td>
   <td><span class="band b2">2 - High</span></td>
   <td class="drv">onprem-host-fanout(24), generic-name, weak-auth</td>
   <td>—</td><td>Yes</td><td>6</td><td>0</td><td>1</td><td>0</td><td>24</td><td>96</td>
 </tr>
 <tr>
-  <td class="mono">m.delacroix@contoso.com</td>
+  <td class="mono">m.multitasker@contoso.com</td>
   <td><span class="sc" style="background:#8a6a12;color:#fff">55</span></td>
   <td><span class="band b2">2 - High</span></td>
   <td class="drv">concurrent-sessions(4), device-fanout(7)</td>
   <td>Legal</td><td>No</td><td>15</td><td>7</td><td>2</td><td>4</td><td>0</td><td>0</td>
 </tr>
 <tr>
-  <td class="mono">training.room3@contoso.com</td>
+  <td class="mono">trainingroom.sharedlogin@contoso.com</td>
   <td><span class="sc" style="background:#6e6a15;color:#fff">47</span></td>
   <td><span class="band b3">3 - Medium</span></td>
   <td class="drv">generic-name, device-fanout(5), weak-auth</td>
   <td>L&amp;D</td><td>No</td><td>9</td><td>5</td><td>1</td><td>1</td><td>0</td><td>54</td>
 </tr>
 <tr>
-  <td class="mono">r.venkataraman@contoso.com</td>
+  <td class="mono">f.roadwarrior@contoso.com</td>
   <td><span class="sc" style="background:#5d5f18;color:#fff">38</span></td>
   <td><span class="band b3">3 - Medium</span></td>
   <td class="drv">ip-fanout(29)</td>
@@ -179,8 +179,7 @@ score as a triage queue, not a verdict.
 </tr>
 </table>
 <div class="note">
-  Note the last row: a score of 38 driven <i>only</i> by <span class="mono">ip-fanout</span> — a field
-  engineer on a mobile network. Weak on its own. Compare with row 3, where four independent indicators agree.
+  <b>f.roadwarrior</b> scores 38 on <span class="mono">ip-fanout</span> alone — a field engineer on a mobile network, and almost certainly fine. <b>p.peregrine</b> scores 78 because four independent indicators agree. Same workbook, very different conversations.
 </div>
 
 </body>

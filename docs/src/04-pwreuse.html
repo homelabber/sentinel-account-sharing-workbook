@@ -42,16 +42,16 @@ suppression — never a silent exclusion, or you have built the blind spot a rea
 <table class="nowrap">
 <tr><th>Account A</th><th>Account B</th><th>Confidence</th><th>SyncRatio</th><th>Synced rotations</th>
     <th>Total A</th><th>Total B</th><th>Same actor</th></tr>
-<tr><td class="mono">svc-reporting@contoso.com</td><td class="mono">svc-reporting-dr@contoso.com</td>
+<tr><td class="mono">svc-donotdelete@contoso.com</td><td class="mono">svc-donotdelete-dr@contoso.com</td>
     <td><span class="sev hi">High - every rotation of both accounts is simultaneous</span></td>
     <td class="val-hi">100.0</td><td>5</td><td>5</td><td>5</td><td>5</td></tr>
-<tr><td class="mono">wh.dispatch@contoso.com</td><td class="mono">wh.dispatch2@contoso.com</td>
+<tr><td class="mono">warehouse.allshifts@contoso.com</td><td class="mono">warehouse.allshifts2@contoso.com</td>
     <td><span class="sev hi">High - every rotation of both accounts is simultaneous</span></td>
     <td class="val-hi">100.0</td><td>4</td><td>4</td><td>4</td><td>4</td></tr>
-<tr><td class="mono">training.room3@contoso.com</td><td class="mono">training.room4@contoso.com</td>
+<tr><td class="mono">trainingroom.sharedlogin@contoso.com</td><td class="mono">trainingroom.sharedlogin2@contoso.com</td>
     <td><span class="sev md">Medium-High - rotations almost always simultaneous</span></td>
     <td class="val-md">85.7</td><td>6</td><td>7</td><td>7</td><td>6</td></tr>
-<tr><td class="mono">kiosk.north@contoso.com</td><td class="mono">kiosk.south@contoso.com</td>
+<tr><td class="mono">kiosk.samepasswordsince2018@contoso.com</td><td class="mono">kiosk.samepasswordsince2018b@contoso.com</td>
     <td><span class="sev lo">Medium - rotations frequently simultaneous</span></td>
     <td>66.7</td><td>2</td><td>3</td><td>3</td><td>2</td></tr>
 </table>
@@ -65,10 +65,10 @@ suppression — never a silent exclusion, or you have built the blind spot a rea
 <tr><th>Window</th><th>Assessment</th><th>Accounts</th><th>Events</th><th>Account list</th></tr>
 <tr><td>2026-09-24 07:15</td>
     <td><span class="sev md">Small set of accounts locked together - classic signature of one shared password stored in automation</span></td>
-    <td>3</td><td>11</td><td class="mono">svc-reporting, svc-reporting-dr, svc-etl</td></tr>
+    <td>3</td><td>11</td><td class="mono">svc-donotdelete, svc-donotdelete-dr, svc-copyofsvc</td></tr>
 <tr><td>2026-09-22 07:15</td>
     <td><span class="sev md">Small set of accounts locked together - classic signature of one shared password stored in automation</span></td>
-    <td>3</td><td>9</td><td class="mono">svc-reporting, svc-reporting-dr, svc-etl</td></tr>
+    <td>3</td><td>9</td><td class="mono">svc-donotdelete, svc-donotdelete-dr, svc-copyofsvc</td></tr>
 <tr><td>2026-09-19 03:40</td>
     <td><span class="sev hi">Many accounts locked in one window - a single cached credential is being replayed for all of them, or a spray is in progress</span></td>
     <td class="val-hi">38</td><td>212</td><td class="mono">a.chen, b.okafor, c.duval, d.rossi, …</td></tr>
@@ -84,13 +84,13 @@ suppression — never a silent exclusion, or you have built the blind spot a rea
 <tr><th>GroupId</th><th>Domain</th><th>Assessment</th><th>Group size</th><th>Accounts</th><th>Collected</th></tr>
 <tr><td class="mono">DUP-0001</td><td>CONTOSO</td>
     <td><span class="sev hi">Ten or more accounts share one password - systemic, likely a provisioning or imaging default</span></td>
-    <td class="val-hi">14</td><td class="mono">temp.hire01 … temp.hire14</td><td>2026-09-22 02:00</td></tr>
+    <td class="val-hi">14</td><td class="mono">newstarter.welcome01 … newstarter.welcome14</td><td>2026-09-22 02:00</td></tr>
 <tr><td class="mono">DUP-0002</td><td>CONTOSO</td>
     <td><span class="sev md">Several accounts share one password</span></td>
-    <td class="val-md">4</td><td class="mono">svc-reporting, svc-reporting-dr, svc-etl, svc-archive</td><td>2026-09-22 02:00</td></tr>
+    <td class="val-md">4</td><td class="mono">svc-donotdelete, svc-donotdelete-dr, svc-copyofsvc, svc-alsodonotdelete</td><td>2026-09-22 02:00</td></tr>
 <tr><td class="mono">DUP-0003</td><td>CONTOSO</td>
     <td><span class="sev lo">Two accounts share one password</span></td>
-    <td>2</td><td class="mono">kiosk.north, kiosk.south</td><td>2026-09-22 02:00</td></tr>
+    <td>2</td><td class="mono">kiosk.samepasswordsince2018, kiosk.samepasswordsince2018b</td><td>2026-09-22 02:00</td></tr>
 </table>
 <div class="note">
   Tier 1 is not an approximation — each group is a set of accounts whose NT hashes are byte-identical.
