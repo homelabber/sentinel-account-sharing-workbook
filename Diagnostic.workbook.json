@@ -1,0 +1,226 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Workbook diagnostic\nWork down the numbered steps. **The first one that fails identifies the layer at fault.**\n\nReport back which step number breaks and what it shows."
+      },
+      "name": "d0"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "---\n### Step 1 — Text rendering\nIf you can read this, text items and the outer JSON envelope are fine."
+      },
+      "name": "d1"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "print Result = 'Step 2 OK - the workbook can run a query against this workspace'",
+        "size": 0,
+        "title": "Step 2 — bare query, no parameters, no tables",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "d2"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "---\n### Step 3 — Parameters\nBelow should show **two filled-in pills**: a time range showing 'Last 7 days' and a dropdown showing **15m**. If either is blank, empty, or says 'mandatory', parameter defaults are the problem."
+      },
+      "name": "d3"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "b8e2cd43-13ac-5ef6-9339-68665842c171",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ],
+              "allowCustom": true
+            }
+          },
+          {
+            "id": "46e4ca6b-9db5-564e-ac10-558fa245e0db",
+            "version": "KqlParameterItem/1.0",
+            "name": "TestWindow",
+            "label": "Test dropdown",
+            "type": 2,
+            "isRequired": true,
+            "value": "15m",
+            "queryType": 8,
+            "typeSettings": {
+              "additionalResourceOptions": []
+            },
+            "query": "[{\"value\": \"5m\", \"label\": \"5 minutes\"}, {\"value\": \"15m\", \"label\": \"15 minutes\", \"selected\": true}, {\"value\": \"1h\", \"label\": \"1 hour\"}]"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "d3params"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "print Step = 'Step 4', Window = '{TestWindow}', Note = 'If Window shows 15m, parameter substitution works'",
+        "size": 0,
+        "title": "Step 4 — parameter substitution into a query",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "d4"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union isfuzzy=true (SigninLogs | take 1 | extend T='SigninLogs')\n| where TimeGenerated {TimeRange}\n| summarize Rows = count()\n| extend Note = iff(Rows > 0, 'SigninLogs has data in range', 'SigninLogs EMPTY or not connected - this is a data problem, not a workbook problem')",
+        "size": 0,
+        "title": "Step 5 — time range parameter against a real table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "d5"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "---\n### Step 6 — Tabs\nClick the two tabs below. Each should reveal a line of text.\nIf clicking does nothing, or neither section ever appears, the tab/group mechanism is the problem."
+      },
+      "name": "d6"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "46ca798f-39ee-5049-b0f6-a990d55b955f",
+            "version": "KqlParameterItem/1.0",
+            "name": "DiagTab",
+            "label": "Selected tab",
+            "type": 1,
+            "isRequired": false,
+            "value": "a",
+            "isHiddenWhenLocked": true
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "d6state"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "e9b73c8e-ccaa-5fb5-9a01-56e84964c810",
+            "cellValue": "DiagTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Tab A",
+            "subTarget": "a",
+            "style": "link"
+          },
+          {
+            "id": "15cf0e01-64b1-5295-a536-6efed5b6accc",
+            "cellValue": "DiagTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Tab B",
+            "subTarget": "b",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "d6tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "**Tab A content visible — tabs work.** Tab A is also the default, so this should be showing the moment the workbook loads."
+            },
+            "name": "d6a-t"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "DiagTab",
+        "comparison": "isEqualTo",
+        "value": "a"
+      },
+      "name": "d6a"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "**Tab B content visible — tab switching works.**"
+            },
+            "name": "d6b-t"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "DiagTab",
+        "comparison": "isEqualTo",
+        "value": "b"
+      },
+      "name": "d6b"
+    }
+  ],
+  "isLocked": false,
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

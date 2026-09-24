@@ -1,0 +1,20 @@
+{
+  "queryType_absent": 280,
+  "total": 280,
+  "sample": {
+    "id": "1772f659-c2b1-4882-a26b-63feb82ab734",
+    "version": "KqlParameterItem/1.0",
+    "name": "WorkbookRenderWhere",
+    "label": "Where to Open",
+    "type": 10,
+    "description": "Select the area where to render the selected workbook",
+    "isRequired": true,
+    "isGlobal": true,
+    "typeSettings": {
+      "additionalResourceOptions": [],
+      "showDefault": false
+    },
+    "jsonData": "[\"Context Pane\",\"Tab\",\"Full Screen\"]",
+    "value": "Full Screen"
+  }
+}

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.bak
+*.tmp
+
+# Never commit collector output — it names every account sharing a credential
+pwquality*.json
+*password-quality*
+ADPasswordQuality*.json
+
+# Local parser dependency, fetched on demand
+kqllib/
+*.nupkg
