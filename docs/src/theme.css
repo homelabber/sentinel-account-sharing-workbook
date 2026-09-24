@@ -1,0 +1,46 @@
+/* Shared Azure-portal-like dark theme for the mockups. */
+:root{
+  --bg:#0f0f0f; --panel:#141414; --line:#2b2b2b; --txt:#e8e8e8;
+  --dim:#a0a0a0; --blue:#4da3ff; --pill:#1c1c1c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+     font-family:"Segoe UI",system-ui,-apple-system,sans-serif;font-size:13.5px;
+     padding:26px 30px;width:1580px}
+h1{font-size:25px;font-weight:600;margin:0 0 12px}
+h2{font-size:19px;font-weight:600;margin:26px 0 10px}
+h3{font-size:15.5px;font-weight:600;margin:20px 0 8px}
+p{line-height:1.6;color:#d6d6d6;max-width:1380px}
+blockquote{border-left:3px solid #6b5416;background:#1a1609;margin:14px 0;
+           padding:11px 15px;color:#e8dcc0;line-height:1.6}
+.pills{display:flex;flex-wrap:wrap;gap:9px;margin:4px 0 6px}
+.pill{background:var(--pill);border:1px solid #3a3a3a;border-radius:16px;
+      padding:7px 15px;color:var(--dim);white-space:nowrap}
+.pill b{color:#fff;font-weight:600}
+.help{border:1px solid var(--line);border-radius:3px;margin:9px 0;padding:10px 14px;
+      background:#121212;color:#d8d8d8;display:flex;align-items:center;gap:9px}
+.help.open{background:#151515}
+.chev{color:var(--dim);font-size:11px}
+.helpbody{border:1px solid var(--line);border-top:none;background:#121212;
+          padding:4px 22px 18px;margin:-9px 0 12px}
+.tabs{display:flex;gap:30px;border-bottom:1px solid var(--line);margin:22px 0 0}
+.tab{padding:11px 2px 12px;color:#cfcfcf;white-space:nowrap}
+.tab.on{color:#fff;font-weight:600;box-shadow:inset 0 -2px 0 var(--blue)}
+table{width:100%;border-collapse:collapse;background:var(--panel);
+      border:1px solid var(--line);font-size:12.5px;margin-top:4px}
+th{text-align:left;padding:9px 11px;color:#cacaca;font-weight:600;
+   border-bottom:1px solid var(--line);background:#181818}
+td{padding:8px 11px;border-bottom:1px solid #202020;vertical-align:top}
+tr:last-child td{border-bottom:none}
+.nowrap td,.nowrap th{white-space:nowrap}
+.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px}
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;
+     background:#1e1e1e;padding:1px 5px;border-radius:3px;color:#d8d8d8}
+.sev{padding:2px 9px;border-radius:3px;font-weight:600;font-size:11.5px}
+.hi{background:#5a1118;color:#ffb3b8}
+.md{background:#5c3407;color:#ffcf94}
+.lo{background:#3a4413;color:#cfe79a}
+.ok{background:#14401f;color:#9fe0b0}
+.note{color:var(--dim);font-size:12px;margin-top:9px;line-height:1.55}
+.val-hi{color:#ff9a9a;font-weight:600}
+.val-md{color:#ffcf94;font-weight:600}

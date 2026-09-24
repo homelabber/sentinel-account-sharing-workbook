@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css">
+<style>body{width:1520px}</style></head><body>
+
+<h1>Parameter reference — expanded</h1>
+<p class="note" style="margin-bottom:18px">One of 20 collapsible help sections. All ship collapsed, so the
+workbook still opens as a dashboard rather than a manual.</p>
+
+<div class="help open"><span class="chev">▼</span> <b>Parameter reference — what every threshold does, and when to change it</b></div>
+<div class="helpbody">
+
+<p>Every threshold answers the same question: <b>how much variety is normal for one human?</b> The right
+answer depends entirely on your organisation. A single-site law firm and a global company with
+follow-the-sun support have legitimately different baselines.</p>
+
+<p><b>General rule: start high, then lower.</b> A too-high threshold shows you only the extremes, which is
+a short, workable list. A too-low threshold buries the extremes in noise and trains people to ignore the
+workbook — which is much harder to recover from.</p>
+
+<hr style="border:none;border-top:1px solid #2b2b2b;margin:20px 0">
+
+<h3>IP fan-out threshold · default 8</h3>
+<p><b>What it does:</b> distinct source IP addresses per account over the time range.</p>
+<p><b>Raise it (12–20)</b> if your users are heavily mobile, if you use carrier-grade NAT, or if you have
+many remote workers on consumer broadband with dynamic addressing. Also raise it whenever you lengthen
+the time range.</p>
+<p><b>Lower it (3–5)</b> for office-bound populations on static egress, or for privileged and service
+accounts, where <i>any</i> variety is suspicious.</p>
+<p><b>Watch out:</b> <b>IP count on its own is the weakest signal here.</b> A single phone moving between
+cell towers and Wi-Fi can generate a dozen IPs in a day. Only treat it as meaningful when it appears
+alongside device or geographic fan-out. This is exactly why the <code>Drivers</code> column exists.</p>
+
+<hr style="border:none;border-top:1px solid #2b2b2b;margin:20px 0">
+
+<h3>Concurrency window · default 15 minutes</h3>
+<p><b>What it does:</b> how close two sign-ins must be to count as simultaneous. The engine counts distinct
+IPs per account per window and flags windows with 3 or more.</p>
+<p><b>Raise it (30m–1h)</b> if VPN reconnects, split-tunnelling or mobile hand-off produce constant false
+hits. A longer window is more forgiving but blurs genuine overlap.</p>
+<p><b>Lower it (5m)</b> for high-assurance environments, or when hunting a specific account. Five minutes
+is close to "literally at the same moment" and produces very few, very strong hits.</p>
+<p><b>Watch out:</b> this is the highest-signal parameter in the workbook. Two people using one account
+<i>must</i> produce concurrent sessions eventually. If this panel is always empty, suspect your window is
+too long or your exclusions too broad — not that sharing is absent.</p>
+
+<hr style="border:none;border-top:1px solid #2b2b2b;margin:20px 0">
+
+<h3>On-prem host fan-out threshold · default 5</h3>
+<p><b>What it does:</b> distinct Active Directory hosts one account authenticates from, via Defender for
+Identity sensors.</p>
+<p><b>Raise it (10–20)</b> for admin and operations staff who legitimately touch many servers.</p>
+<p><b>Lower it (3)</b> for standard user accounts, which should touch very few hosts.</p>
+<p><b>Watch out:</b> <b>this is the cleanest fan-out signal in the workbook.</b> There is no CGNAT, no
+mobile churn and no geolocation guesswork on an internal network — a user account authenticating from 20
+workstations is shared, automated, or stolen, with very little room for a benign explanation. Weight it
+accordingly.</p>
+
+<hr style="border:none;border-top:1px solid #2b2b2b;margin:20px 0">
+
+<h3>Exclude accounts · default <code>none@example.invalid</code></h3>
+<p><b>What it does:</b> substring match against UPN, applied across almost every panel.</p>
+<p><b>Add:</b> break-glass accounts, vulnerability scanners, backup and RMM agents, monitoring accounts,
+sanctioned kiosk and conference-room accounts.</p>
+<p><b>Watch out:</b> exclusions are invisible once set, and an excluded account is a blind spot forever.
+<b>Document every entry and review the list quarterly</b> — an attacker who learns an exclusion pattern
+gets free rein. Never exclude a privileged account to quiet a panel; fix the underlying noise instead.</p>
+
+</div>
+
+<div class="help"><span class="chev">▶</span> Glossary — fan-out, geo-velocity, NTLM, token replay, honeytokens…</div>
+<div class="help"><span class="chev">▶</span> Investigating a hit — triage questions and building an evidence pack</div>
+<div class="help"><span class="chev">▶</span> Known false positives — check these before you escalate</div>
+
+</body></html>

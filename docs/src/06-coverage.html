@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css">
+<style>body{width:1440px}</style></head><body>
+
+<div class="tabs">
+  <div class="tab">Overview &amp; Score</div>
+  <div class="tab">Concurrent Sessions</div>
+  <div class="tab">Device &amp; Location Fan-Out</div>
+  <div class="tab">Credential Hygiene</div>
+  <div class="tab">Password Reuse</div>
+  <div class="tab">Generic &amp; Service Accounts</div>
+  <div class="tab">On-Prem AD (MDI)</div>
+  <div class="tab">Local Accounts (MDE)</div>
+  <div class="tab">Red-Team Tradecraft</div>
+  <div class="tab">Account Drilldown</div>
+  <div class="tab on">Coverage &amp; Limits</div>
+</div>
+
+<div class="help" style="margin-top:18px"><span class="chev">▶</span> How to read this tab</div>
+
+<p><b>Start here, not at the Overview.</b> An empty panel and a clean result look identical and mean
+opposite things. Check connector status below before trusting anything else.</p>
+
+<h2>Tables present in this workspace</h2>
+<table class="nowrap">
+<tr><th>TableName</th><th>Status</th><th>Rows</th><th>Feeds</th></tr>
+<tr><td class="mono">AADNonInteractiveUserSignInLogs</td><td><span class="sev ok">Data present</span></td><td>4,182,905</td><td>Token replay, non-interactive activity</td></tr>
+<tr><td class="mono">SigninLogs</td><td><span class="sev ok">Data present</span></td><td>911,447</td><td>Overview, Concurrency, Fan-Out, Hygiene, Generic</td></tr>
+<tr><td class="mono">DeviceLogonEvents</td><td><span class="sev ok">Data present</span></td><td>402,113</td><td>Local Accounts tab</td></tr>
+<tr><td class="mono">IdentityLogonEvents</td><td><span class="sev ok">Data present</span></td><td>288,640</td><td>On-Prem AD tab, NTLM analysis</td></tr>
+<tr><td class="mono">DeviceProcessEvents</td><td><span class="sev ok">Data present</span></td><td>150,882</td><td>Credential hunting, RDP shadowing</td></tr>
+<tr><td class="mono">IdentityDirectoryEvents</td><td><span class="sev ok">Data present</span></td><td>96,204</td><td>Password activity, group changes</td></tr>
+<tr><td class="mono">AuditLogs</td><td><span class="sev ok">Data present</span></td><td>44,019</td><td>MFA registration, password resets</td></tr>
+<tr><td class="mono">IdentityInfo</td><td><span class="sev ok">Data present</span></td><td>12,806</td><td>Account attributes, dormancy, privilege</td></tr>
+<tr><td class="mono">SecurityAlert</td><td><span class="sev ok">Data present</span></td><td>1,244</td><td>Alert panels, honeytokens</td></tr>
+<tr><td class="mono">AADUserRiskEvents</td><td><span class="sev ok">Data present</span></td><td>318</td><td>Risk component of the score, leaked credentials</td></tr>
+<tr><td class="mono">IdentityQueryEvents</td><td><span class="sev ok">Data present</span></td><td>96</td><td>Directory enumeration / pre-Kerberoasting</td></tr>
+<tr><td class="mono">BehaviorAnalytics</td><td><span class="sev md">EMPTY - table exists but no rows in this time range</span></td><td>0</td><td>UEBA panel</td></tr>
+</table>
+
+<h2>Tables NOT present (connector not deployed)</h2>
+<table class="nowrap">
+<tr><th>TableName</th><th>Status</th></tr>
+<tr><td class="mono">ADPasswordQuality_CL</td><td><span class="sev md">NOT PRESENT - connector not deployed to this workspace</span></td></tr>
+<tr><td class="mono">DeviceEvents</td><td><span class="sev md">NOT PRESENT - connector not deployed to this workspace</span></td></tr>
+<tr><td class="mono">SecurityEvent</td><td><span class="sev md">NOT PRESENT - connector not deployed to this workspace</span></td></tr>
+</table>
+<div class="note">
+  Panels depending on these will stay empty. <b>That is missing data, not a clean result</b> — the
+  distinction matters before reporting "no findings".
+</div>
+
+<div class="help" style="margin-top:22px"><span class="chev">▶</span> Required connectors, honest limits, and what to promote into Analytics Rules</div>
+
+</body></html>

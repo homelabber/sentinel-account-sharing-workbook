@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="theme.css">
+<style>body{width:1540px}</style></head><body>
+
+<div class="tabs">
+  <div class="tab">Overview &amp; Score</div>
+  <div class="tab">Concurrent Sessions</div>
+  <div class="tab">Device &amp; Location Fan-Out</div>
+  <div class="tab">Credential Hygiene</div>
+  <div class="tab">Password Reuse</div>
+  <div class="tab">Generic &amp; Service Accounts</div>
+  <div class="tab">On-Prem AD (MDI)</div>
+  <div class="tab">Local Accounts (MDE)</div>
+  <div class="tab on">Red-Team Tradecraft</div>
+  <div class="tab">Account Drilldown</div>
+  <div class="tab">Coverage &amp; Limits</div>
+</div>
+
+<div class="help" style="margin-top:18px"><span class="chev">▶</span> How to read this tab</div>
+<div class="help open"><span class="chev">▼</span> <b>Technique reference — what each attack achieves and where it surfaces here</b></div>
+<div class="helpbody">
+<p>Every technique below exists specifically to make one credential usable by a second party — which is
+why credential-theft tradecraft belongs in a workbook about account sharing.</p>
+<table>
+<tr><th>Technique</th><th>What it achieves</th><th>Where it surfaces here</th></tr>
+<tr><td>Pass-the-Hash / Overpass-the-Hash (T1550.002)</td><td>Reuse a password hash without ever knowing the password</td><td>MDI alerts · NTLM panel</td></tr>
+<tr><td>Pass-the-Ticket / Golden &amp; Silver Ticket (T1550.003, T1558)</td><td>Reuse or forge Kerberos material</td><td>MDI alerts</td></tr>
+<tr><td>Kerberoasting / AS-REP Roasting (T1558.003)</td><td>Crack service-account passwords offline — the accounts most likely to already be shared</td><td>Directory enumeration</td></tr>
+<tr><td>DCSync (T1003.006)</td><td>Pull every credential in the domain from a DC</td><td>MDI alerts</td></tr>
+<tr><td>AiTM proxy phishing &amp; token theft (T1539, T1550.001)</td><td>Steal the session, bypassing MFA entirely</td><td>Token replay</td></tr>
+<tr><td>Device code phishing (T1566)</td><td>Have the victim complete sign-in for the attacker's session</td><td>Device code panel</td></tr>
+</table>
+<p style="margin-top:14px"><b>Sharing or compromise?</b> Sharing is <i>stable and routine</i> — the same
+second location, week after week. Compromise is <i>new and abrupt</i>, usually with token replay or Entra
+risk detections alongside. They need different responses: one is a policy conversation, the other is an
+incident.</p>
+</div>
+
+<h2>Session / refresh token used from multiple locations (AiTM &amp; session sharing)</h2>
+<table class="nowrap">
+<tr><th>UserPrincipalName</th><th>Assessment</th><th>IPs</th><th>ASNs</th><th>Countries</th>
+    <th>Uses</th><th>Countries seen</th><th>First use</th><th>Last use</th></tr>
+<tr><td class="mono">a.nakamura@contoso.com</td>
+    <td><span class="sev hi">Same refresh/session token used from multiple countries - token theft (AiTM) or deliberate session sharing</span></td>
+    <td class="val-hi">7</td><td>4</td><td class="val-hi">3</td><td>214</td>
+    <td>JP, DE, ES</td><td>2026-09-21 09:14</td><td>2026-09-23 14:02</td></tr>
+<tr><td class="mono">p.oyelaran@contoso.com</td>
+    <td><span class="sev hi">Same refresh/session token used from multiple countries - token theft (AiTM) or deliberate session sharing</span></td>
+    <td class="val-hi">5</td><td>3</td><td class="val-md">2</td><td>88</td>
+    <td>NG, GB</td><td>2026-09-22 06:02</td><td>2026-09-22 19:41</td></tr>
+<tr><td class="mono">wh.dispatch@contoso.com</td>
+    <td><span class="sev md">Same token used across different networks - copied session or proxy</span></td>
+    <td class="val-md">4</td><td>2</td><td>1</td><td>402</td>
+    <td>US</td><td>2026-09-18 05:30</td><td>2026-09-24 22:10</td></tr>
+</table>
+<div class="note">Multiple countries on one token means MFA was bypassed — the token is post-authentication.
+Route to incident response, not to a policy conversation.</div>
+
+<h2>Honeytoken activity (zero-false-positive signal)</h2>
+<table class="nowrap">
+<tr><th>TimeGenerated</th><th>Signal</th><th>Detail</th><th>Entity</th><th>Severity</th></tr>
+<tr><td>2026-09-23 02:41</td><td>MDI honeytoken alert</td>
+    <td>Honeytoken activity — authentication attempt against decoy account</td>
+    <td class="mono">ht-svc-legacy@contoso.com</td><td><span class="sev hi">High</span></td></tr>
+<tr><td>2026-09-23 02:41</td><td>Honeytoken logon activity</td>
+    <td>LogonFailed</td><td class="mono">ht-svc-legacy</td><td><span class="sev md">Medium</span></td></tr>
+</table>
+<div class="note">
+  The only zero-false-positive signal in the workbook. A decoy account no human should ever touch —
+  any authentication against it is unauthorised by definition. An empty panel means none are configured,
+  which is the cheapest detection win available.
+</div>
+
+<h2>Password spray vs. brute force vs. credential stuffing</h2>
+<table class="nowrap">
+<tr><th>IPAddress</th><th>ASN</th><th>Pattern</th><th>Targeted accounts</th><th>Failures</th>
+    <th>Countries</th><th>First seen</th><th>Last seen</th></tr>
+<tr><td class="mono">203.0.113.47</td><td>64512</td>
+    <td><span class="sev hi">Password spray - few attempts against many accounts</span></td>
+    <td class="val-hi">1,284</td><td>2,611</td><td>RU</td><td>2026-09-19 03:12</td><td>2026-09-19 04:48</td></tr>
+<tr><td class="mono">198.51.100.12</td><td>64513</td>
+    <td><span class="sev md">Credential stuffing - reused credential list</span></td>
+    <td class="val-md">96</td><td>487</td><td>NL</td><td>2026-09-20 22:05</td><td>2026-09-21 01:30</td></tr>
+<tr><td class="mono">192.0.2.88</td><td>64514</td>
+    <td><span class="sev lo">Brute force - many attempts against few accounts</span></td>
+    <td>2</td><td>1,940</td><td>BR</td><td>2026-09-22 11:20</td><td>2026-09-22 16:55</td></tr>
+</table>
+
+</body></html>

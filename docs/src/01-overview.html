@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overview</title>
+<style>
+  :root{
+    --bg:#0f0f0f; --panel:#141414; --line:#2b2b2b; --txt:#e8e8e8;
+    --dim:#a0a0a0; --blue:#4da3ff; --pill:#1c1c1c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font-family:"Segoe UI",system-ui,-apple-system,sans-serif;font-size:13.5px;
+       padding:26px 30px;width:1580px}
+  h1{font-size:27px;font-weight:600;margin:0 0 10px}
+  .lede{color:#d2d2d2;max-width:1400px;line-height:1.55;margin-bottom:14px}
+  blockquote{border-left:3px solid #4a4a4a;margin:14px 0;padding:2px 0 2px 14px;color:#c8c8c8;line-height:1.55}
+  .pills{display:flex;flex-wrap:wrap;gap:9px;margin:18px 0 6px}
+  .pill{background:var(--pill);border:1px solid #3a3a3a;border-radius:16px;
+        padding:7px 15px;color:var(--dim);white-space:nowrap}
+  .pill b{color:#fff;font-weight:600}
+  .help{border:1px solid var(--line);border-radius:3px;margin:9px 0;padding:10px 14px;
+        background:#121212;color:#d8d8d8;display:flex;align-items:center;gap:9px}
+  .chev{color:var(--dim);font-size:11px}
+  .tabs{display:flex;gap:30px;border-bottom:1px solid var(--line);margin:24px 0 0;padding-bottom:0}
+  .tab{padding:11px 2px 12px;color:#cfcfcf;white-space:nowrap}
+  .tab.on{color:#fff;font-weight:600;box-shadow:inset 0 -2px 0 var(--blue)}
+  h2{font-size:19px;font-weight:600;margin:26px 0 10px}
+  .tiles{display:flex;gap:13px;margin:12px 0 26px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:3px;
+        padding:13px 17px;min-width:176px}
+  .tile .lbl{color:var(--dim);font-size:12.5px;margin-bottom:9px}
+  .tile .val{font-size:30px;font-weight:600;border-left:3px solid var(--blue);padding-left:11px;line-height:1}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+        border:1px solid var(--line);font-size:12.5px}
+  th{text-align:left;padding:9px 11px;color:#cacaca;font-weight:600;
+     border-bottom:1px solid var(--line);background:#181818;white-space:nowrap}
+  td{padding:8px 11px;border-bottom:1px solid #202020;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:11.5px}
+  .band{padding:2px 9px;border-radius:3px;font-weight:600;font-size:11.5px}
+  .b1{background:#5a1118;color:#ffb3b8}
+  .b2{background:#5c3407;color:#ffcf94}
+  .b3{background:#4a4413;color:#f0e79a}
+  .sc{display:inline-block;min-width:34px;text-align:center;padding:2px 7px;border-radius:3px;font-weight:600}
+  .drv{color:#b9d9ff;font-size:11.5px;font-family:"Cascadia Mono",Consolas,monospace}
+  .note{color:var(--dim);font-size:12px;margin-top:9px}
+</style>
+</head>
+<body>
+
+<h1>Account &amp; Credential Sharing — Identity Visibility for the SOC</h1>
+<div class="lede">
+Correlates <b>Microsoft Defender for Identity</b> (on-premises Active Directory), <b>Microsoft Entra ID</b>
+sign-in, risk and audit data, <b>Defender for Endpoint</b> logon telemetry and <b>UEBA</b> into one view of
+who is sharing accounts, passwords and sessions — plus the red-team tradecraft used to obtain and reuse
+other people's credentials.
+</div>
+<blockquote>
+<b>Account sharing is never <i>proven</i> by telemetry — it is inferred.</b> Every panel produces an
+<b>indicator</b>; the Overview score is a transparent, weighted roll-up of those indicators. Treat a high
+score as a triage queue, not a verdict.
+</blockquote>
+
+<div class="help"><span class="chev">▶</span> Start here — how to use this workbook</div>
+<div class="help"><span class="chev">▶</span> Understanding the sharing score and Drivers</div>
+<div class="help"><span class="chev">▶</span> Parameter reference — what every threshold does, and when to change it</div>
+<div class="help"><span class="chev">▶</span> Glossary — fan-out, geo-velocity, NTLM, token replay, honeytokens…</div>
+<div class="help"><span class="chev">▶</span> Investigating a hit — triage questions and building an evidence pack</div>
+<div class="help"><span class="chev">▶</span> Known false positives — check these before you escalate</div>
+
+<div class="pills">
+  <div class="pill">Time range: <b>Last 7 days</b></div>
+  <div class="pill">Concurrency window = <b>15 minutes</b></div>
+  <div class="pill">IP fan-out threshold = <b>8</b></div>
+  <div class="pill">Device fan-out threshold = <b>3</b></div>
+  <div class="pill">Country fan-out threshold = <b>2</b></div>
+  <div class="pill">Accounts-per-device threshold = <b>4</b></div>
+  <div class="pill">On-prem host fan-out threshold = <b>5</b></div>
+  <div class="pill">Dormant / stale threshold = <b>90 days</b></div>
+  <div class="pill">Minimum sharing score = <b>15 — Low and above</b></div>
+</div>
+
+<div class="tabs">
+  <div class="tab on">Overview &amp; Score</div>
+  <div class="tab">Concurrent Sessions</div>
+  <div class="tab">Device &amp; Location Fan-Out</div>
+  <div class="tab">Credential Hygiene</div>
+  <div class="tab">Password Reuse</div>
+  <div class="tab">Generic &amp; Service Accounts</div>
+  <div class="tab">On-Prem AD (MDI)</div>
+  <div class="tab">Local Accounts (MDE)</div>
+  <div class="tab">Red-Team Tradecraft</div>
+  <div class="tab">Account Drilldown</div>
+  <div class="tab">Coverage &amp; Limits</div>
+</div>
+
+<h2>Estate summary</h2>
+<div class="tiles">
+  <div class="tile"><div class="lbl">Accounts observed</div><div class="val">4,812</div></div>
+  <div class="tile"><div class="lbl">Above IP fan-out thres…</div><div class="val">137</div></div>
+  <div class="tile"><div class="lbl">Above device fan-out …</div><div class="val">64</div></div>
+  <div class="tile"><div class="lbl">Above country fan-out…</div><div class="val">29</div></div>
+  <div class="tile"><div class="lbl">Concurrent-session ac…</div><div class="val">18</div></div>
+  <div class="tile"><div class="lbl">Generic/service-named…</div><div class="val">211</div></div>
+  <div class="tile"><div class="lbl">Devices used by many …</div><div class="val">42</div></div>
+  <div class="tile"><div class="lbl">Accounts using legacy…</div><div class="val">73</div></div>
+</div>
+
+<h2>Account sharing scorecard</h2>
+<table>
+<tr>
+  <th>UserPrincipalName</th><th>Score</th><th>Band</th><th>Drivers</th>
+  <th>Dept</th><th>Priv</th><th>IPs</th><th>Dev</th><th>Ctry</th>
+  <th>Concur</th><th>OnPrem</th><th>Legacy</th>
+</tr>
+<tr>
+  <td class="mono">svc-reporting@contoso.com</td>
+  <td><span class="sc" style="background:#7d1420;color:#fff">92</span></td>
+  <td><span class="band b1">1 - Critical</span></td>
+  <td class="drv">concurrent-sessions(9), onprem-host-fanout(31), generic-name, weak-auth</td>
+  <td>—</td><td>Yes</td><td>27</td><td>0</td><td>2</td><td>9</td><td>31</td><td>412</td>
+</tr>
+<tr>
+  <td class="mono">wh.dispatch@contoso.com</td>
+  <td><span class="sc" style="background:#8f1f18;color:#fff">86</span></td>
+  <td><span class="band b1">1 - Critical</span></td>
+  <td class="drv">concurrent-sessions(12), device-fanout(11), ip-fanout(34)</td>
+  <td>Logistics</td><td>No</td><td>34</td><td>11</td><td>1</td><td>12</td><td>4</td><td>0</td>
+</tr>
+<tr>
+  <td class="mono">a.nakamura@contoso.com</td>
+  <td><span class="sc" style="background:#9e3a14;color:#fff">78</span></td>
+  <td><span class="band b1">1 - Critical</span></td>
+  <td class="drv">geo-fanout(4), concurrent-sessions(6), entra-risk, token-replay(3)</td>
+  <td>Finance</td><td>Yes</td><td>19</td><td>5</td><td>4</td><td>6</td><td>2</td><td>0</td>
+</tr>
+<tr>
+  <td class="mono">frontdesk.lobby@contoso.com</td>
+  <td><span class="sc" style="background:#a85411;color:#fff">71</span></td>
+  <td><span class="band b1">1 - Critical</span></td>
+  <td class="drv">device-fanout(8), generic-name, weak-auth, ip-fanout(21)</td>
+  <td>Facilities</td><td>No</td><td>21</td><td>8</td><td>1</td><td>3</td><td>0</td><td>168</td>
+</tr>
+<tr>
+  <td class="mono">p.oyelaran@contoso.com</td>
+  <td><span class="sc" style="background:#a8680f;color:#fff">64</span></td>
+  <td><span class="band b2">2 - High</span></td>
+  <td class="drv">concurrent-sessions(5), geo-fanout(3), device-fanout(6)</td>
+  <td>Sales</td><td>No</td><td>23</td><td>6</td><td>3</td><td>5</td><td>1</td><td>0</td>
+</tr>
+<tr>
+  <td class="mono">svc-backup01@contoso.com</td>
+  <td><span class="sc" style="background:#a8680f;color:#fff">61</span></td>
+  <td><span class="band b2">2 - High</span></td>
+  <td class="drv">onprem-host-fanout(24), generic-name, weak-auth</td>
+  <td>—</td><td>Yes</td><td>6</td><td>0</td><td>1</td><td>0</td><td>24</td><td>96</td>
+</tr>
+<tr>
+  <td class="mono">m.delacroix@contoso.com</td>
+  <td><span class="sc" style="background:#8a6a12;color:#fff">55</span></td>
+  <td><span class="band b2">2 - High</span></td>
+  <td class="drv">concurrent-sessions(4), device-fanout(7)</td>
+  <td>Legal</td><td>No</td><td>15</td><td>7</td><td>2</td><td>4</td><td>0</td><td>0</td>
+</tr>
+<tr>
+  <td class="mono">training.room3@contoso.com</td>
+  <td><span class="sc" style="background:#6e6a15;color:#fff">47</span></td>
+  <td><span class="band b3">3 - Medium</span></td>
+  <td class="drv">generic-name, device-fanout(5), weak-auth</td>
+  <td>L&amp;D</td><td>No</td><td>9</td><td>5</td><td>1</td><td>1</td><td>0</td><td>54</td>
+</tr>
+<tr>
+  <td class="mono">r.venkataraman@contoso.com</td>
+  <td><span class="sc" style="background:#5d5f18;color:#fff">38</span></td>
+  <td><span class="band b3">3 - Medium</span></td>
+  <td class="drv">ip-fanout(29)</td>
+  <td>Field Eng</td><td>No</td><td>29</td><td>2</td><td>1</td><td>0</td><td>0</td><td>0</td>
+</tr>
+</table>
+<div class="note">
+  Note the last row: a score of 38 driven <i>only</i> by <span class="mono">ip-fanout</span> — a field
+  engineer on a mobile network. Weak on its own. Compare with row 3, where four independent indicators agree.
+</div>
+
+</body>
+</html>

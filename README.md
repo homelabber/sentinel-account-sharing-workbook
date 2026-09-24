@@ -16,6 +16,54 @@ Most identity-protection tooling reports it as a side effect of something else. 
 
 ---
 
+## Screenshots
+
+> ⚠️ **All screenshots use synthetic data.** No real tenant, account, IP address or location appears anywhere in this repository. The accounts, domains and addresses shown are fabricated for illustration and use [RFC 5737](https://datatracker.ietf.org/doc/html/rfc5737) / [RFC 2606](https://datatracker.ietf.org/doc/html/rfc2606) reserved ranges where addresses are shown.
+
+### Overview &amp; Score
+
+The triage queue. The **Drivers** column matters more than the number — it names which indicators fired, which is what determines whether a score means anything.
+
+![Overview and scorecard](docs/img/01-overview.png)
+
+Note the bottom row: a score of 38 driven *only* by `ip-fanout` — a field engineer on a mobile network, and weak on its own. Compare with the third row, where four independent indicators agree.
+
+### Concurrent Sessions
+
+The strongest evidence available. Geo-velocity is computed from raw sign-in coordinates rather than read from Entra ID Protection, so it works without P2 licensing and the arithmetic is auditable.
+
+![Concurrent sessions and geo-velocity](docs/img/02-concurrency.png)
+
+Persistence is the discriminator: one overlapping window is an event, the same account overlapping on 21 separate days is an arrangement.
+
+### Built-in guidance
+
+~9,000 words across 20 collapsible sections, all shipped collapsed so the workbook still opens as a dashboard. Every threshold is documented with what it counts, when to raise it, when to lower it, and what to watch out for.
+
+![Parameter reference expanded](docs/img/03-help.png)
+
+### Password Reuse
+
+Three explicit tiers, with the constraint stated plainly rather than papered over.
+
+![Password reuse tiers and panels](docs/img/04-pwreuse.png)
+
+The lockout panel is the one most often misread: a *small stable* set locking together is a shared credential cached in automation; a *large shifting* set is a password spray. Same panel, opposite conclusions.
+
+### Red-Team Tradecraft
+
+Credential theft and account sharing are the same telemetry viewed with different intent.
+
+![Red-team tradecraft panels](docs/img/05-redteam.png)
+
+### Coverage &amp; Limits
+
+Check this **first**. An empty panel and a clean result look identical and mean opposite things.
+
+![Live connector coverage](docs/img/06-coverage.png)
+
+---
+
 ## Tabs
 
 | Tab | Answers |
