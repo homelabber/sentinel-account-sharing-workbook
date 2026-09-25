@@ -1,0 +1,125 @@
+id: d9dc6fe9-883a-55ce-9277-78dfd6bac552
+name: Account sharing - geo-velocity exceeds commercial flight
+description: |
+  Two successful sign-ins for the same account whose separation in space and time
+  requires travelling faster than 1,500 km/h — quicker than any commercial flight,
+  before boarding, taxi and transit are even considered.
+
+  Distance is computed from the raw geo-coordinates on the sign-in records with
+  geo_distance_2points, not read from Entra ID Protection. The rule therefore works
+  without a P2 licence and the arithmetic is auditable: RequiredSpeedKmh, DistanceKm
+  and ElapsedHours all appear on the alert.
+
+  This is the single strongest sharing indicator available in sign-in telemetry.
+  It is not proof — a corporate VPN, a cloud egress point or a mobile carrier
+  backhauling traffic to a distant PoP all produce the same arithmetic. Check the
+  SameNetwork field and the named exclusions before escalating.
+severity: High
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+queryFrequency: PT1H
+queryPeriod: PT6H
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - InitialAccess
+  - CredentialAccess
+relevantTechniques:
+  - T1078
+query: |
+  // --- tuning -------------------------------------------------------------
+  // MinSpeedKmh   raise to 2000+ to cut VPN/egress noise, lower to 900 to catch
+  //               slower anomalies at the cost of many more false positives.
+  // MinDistanceKm below ~150 km, city-level geo-IP error dominates the result.
+  // ExcludedUsers break-glass, scanners, backup/RMM and sanctioned kiosks.
+  let DetectionWindow = 1h;
+  let LookbackWindow  = 6h;
+  let MinSpeedKmh     = 1500.0;
+  let MinDistanceKm   = 150.0;
+  let ExcludedUsers   = dynamic(["none@example.invalid"]);
+  SigninLogs
+  | where TimeGenerated > ago(LookbackWindow)
+  | where ResultType == 0
+  | extend UserPrincipalName = tolower(UserPrincipalName)
+  | where isnotempty(UserPrincipalName)
+  | where not(UserPrincipalName has_any (ExcludedUsers))
+  | extend Lat     = toreal(LocationDetails.geoCoordinates.latitude),
+           Lon     = toreal(LocationDetails.geoCoordinates.longitude),
+           City    = tostring(LocationDetails.city),
+           Country = tostring(LocationDetails.countryOrRegion)
+  | where isnotnull(Lat) and isnotnull(Lon)
+  | project TimeGenerated, UserPrincipalName, IPAddress, Lat, Lon, City, Country,
+            AppDisplayName, ASN = tostring(column_ifexists("AutonomousSystemNumber", "")),
+            UserAgent = tostring(column_ifexists("UserAgent", ""))
+  | sort by UserPrincipalName asc, TimeGenerated asc
+  | extend pUser    = prev(UserPrincipalName), pTime = prev(TimeGenerated),
+           pLat     = prev(Lat),  pLon     = prev(Lon),
+           pIP      = prev(IPAddress), pCity = prev(City),
+           pCountry = prev(Country), pASN   = prev(ASN)
+  | where pUser == UserPrincipalName
+  // only alert on pairs whose later sign-in landed in this run's window, so one
+  // violation is reported once rather than on every run for LookbackWindow
+  | where TimeGenerated > ago(DetectionWindow)
+  | extend DistanceKm   = round(geo_distance_2points(pLon, pLat, Lon, Lat) / 1000.0, 1)
+  | extend ElapsedHours = round(todouble(datetime_diff('second', TimeGenerated, pTime)) / 3600.0, 4)
+  | where DistanceKm > MinDistanceKm and ElapsedHours >= 0
+  | extend RequiredSpeedKmh = iff(ElapsedHours <= 0.0, 999999.0, round(DistanceKm / ElapsedHours, 0))
+  | where RequiredSpeedKmh > MinSpeedKmh
+  | extend Verdict = case(RequiredSpeedKmh > 5000, "Physically impossible - concurrent use or proxy",
+                          "Impossible without a flight - very likely shared")
+  | extend SameNetwork = iff(isnotempty(ASN) and ASN == pASN, "Yes - single ASN, suspect VPN or carrier egress", "No")
+  | extend AccountName      = tostring(split(UserPrincipalName, "@")[0]),
+           AccountUPNSuffix = tostring(split(UserPrincipalName, "@")[1])
+  | project TimeGenerated, UserPrincipalName, AccountName, AccountUPNSuffix, Verdict,
+            RequiredSpeedKmh, DistanceKm, ElapsedHours, SameNetwork,
+            FromCity = pCity, FromCountry = pCountry, FromIP = pIP,
+            ToCity = City, ToCountry = Country, ToIP = IPAddress,
+            AppDisplayName, UserAgent, ASN
+  | sort by RequiredSpeedKmh desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+      - identifier: Name
+        columnName: AccountName
+      - identifier: UPNSuffix
+        columnName: AccountUPNSuffix
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: ToIP
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: FromIP
+customDetails:
+  RequiredSpeedKmh: RequiredSpeedKmh
+  DistanceKm: DistanceKm
+  ElapsedHours: ElapsedHours
+  FromLocation: FromCity
+  ToLocation: ToCity
+  SameNetwork: SameNetwork
+  Application: AppDisplayName
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Geo-velocity {{RequiredSpeedKmh}} km/h for {{UserPrincipalName}}'
+  alertDescriptionFormat: |
+    {{UserPrincipalName}} signed in from {{FromCity}}, {{FromCountry}} ({{FromIP}}) and then from
+    {{ToCity}}, {{ToCountry}} ({{ToIP}}) — {{DistanceKm}} km apart in {{ElapsedHours}} hours,
+    requiring {{RequiredSpeedKmh}} km/h. Single-ASN path: {{SameNetwork}}.
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: PT12H
+    matchingMethod: Selected
+    groupByEntities:
+      - Account
+version: 1.0.0
+kind: Scheduled

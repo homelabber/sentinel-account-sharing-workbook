@@ -1,0 +1,152 @@
+id: f14c7d37-62c3-5509-a3bd-bb378248608f
+name: Account sharing - local administrator authenticating over the network to many hosts
+description: |
+  A local (non-domain) account with local administrator rights authenticates over
+  the network to five or more distinct devices within an hour.
+
+  A local account is, by definition, local. It exists in the SAM database of one
+  machine. When the same local administrator name and secret authenticates across
+  a fleet, only one thing is happening: that password is identical on every one of
+  those machines, and somebody — an administrator, a deployment image, or an
+  attacker who dumped it once — is using that fact.
+
+  This is the precondition for classic lateral movement. It is also the single
+  most common finding in environments that have not deployed LAPS, where a build
+  image set the same local administrator password on every endpoint years ago and
+  nobody has changed it since.
+
+  Distinguishing benign from malicious: a scheduled management sweep hits the same
+  target list at the same time every day and comes from one source host. Credential
+  reuse by an operator or an adversary looks irregular, comes from a workstation,
+  and often follows a credential-dumping alert. The SourceHosts and LogonTypes
+  fields are what tell them apart.
+
+  If the finding is benign, the remediation is still the same: deploy LAPS, or
+  Windows LAPS in Entra, so the password is unique per device.
+
+  Grouping note: the rule keys on the account NAME alone. A local account's domain
+  component is the machine it lives on, and its SID is machine-specific, so keying
+  on either would place every host in its own bucket and the fan-out could never
+  appear. The distinct-SID count is reported instead as corroboration — more than
+  one SID confirms these are genuinely separate SAM accounts sharing a name.
+severity: Medium
+requiredDataConnectors:
+  - connectorId: MicrosoftThreatProtection
+    dataTypes:
+      - DeviceLogonEvents
+queryFrequency: PT1H
+queryPeriod: PT1H
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - LateralMovement
+  - CredentialAccess
+  - Persistence
+relevantTechniques:
+  - T1021.002
+  - T1078.003
+  - T1550.002
+query: |
+  // --- tuning -------------------------------------------------------------
+  // MinTargetDevices  5 per hour is a deliberate floor. Lower it to 3 in a small
+  //   estate. Raise it if a management tool legitimately sweeps the fleet and you
+  //   would rather exclude the pattern than the account.
+  // ExcludedAccounts  name the management and imaging accounts here rather than
+  //   raising the threshold, so a genuine credential sweep still surfaces.
+  let DetectionWindow   = 1h;
+  let MinTargetDevices  = 5;
+  let ExcludedAccounts  = dynamic(["none-such-account"]);
+  let BuiltInNonHuman   = dynamic(["system", "local service", "network service", "anonymous logon",
+                                   "dwm-1", "dwm-2", "umfd-0", "umfd-1"]);
+  DeviceLogonEvents
+  | where TimeGenerated > ago(DetectionWindow)
+  | where ActionType == "LogonSuccess"
+  | where LogonType in ("Network", "RemoteInteractive", "Batch", "Service")
+  | where IsLocalAdmin == true
+  | where isnotempty(RemoteIP) or isnotempty(RemoteDeviceName)
+  | where isnotempty(AccountName)
+  | extend AccountNameLower = tolower(AccountName)
+  | where AccountNameLower !in (BuiltInNonHuman)
+  | where AccountNameLower !in (ExcludedAccounts)
+  // A local account authenticates against the SAM of the machine itself, so its
+  // account domain is that machine's own short name. A domain account carries the
+  // NetBIOS domain instead. This comparison is what separates the two; matching on
+  // "no dot in the domain" does not, because NetBIOS domain names have no dot.
+  | extend DeviceShortName = tolower(tostring(split(DeviceName, ".")[0]))
+  | where tolower(AccountDomain) == DeviceShortName
+  // Group by the account NAME alone, never by domain\name. For a local account the
+  // domain component is the machine, so grouping on it would place every host in
+  // its own bucket and the fan-out this rule exists to find could never appear.
+  // The local SID varies per machine for the same reason and is collected, not keyed on.
+  | summarize TimeGenerated   = max(TimeGenerated),
+              Logons          = count(),
+              TargetDevices   = dcount(DeviceName),
+              SourceHosts     = dcountif(RemoteDeviceName, isnotempty(RemoteDeviceName)),
+              SourceIPs       = dcountif(RemoteIP, isnotempty(RemoteIP)),
+              DistinctSids    = dcountif(AccountSid, isnotempty(AccountSid)),
+              TargetList      = make_set(DeviceName, 25),
+              SourceList      = make_set_if(RemoteDeviceName, isnotempty(RemoteDeviceName), 25),
+              SourceIPList    = make_set_if(RemoteIP, isnotempty(RemoteIP), 25),
+              LogonTypes      = make_set(LogonType, 6),
+              FirstSeen       = min(TimeGenerated)
+      by AccountName = AccountNameLower
+  | where TargetDevices >= MinTargetDevices
+  | extend Assessment = case(TargetDevices >= 20, "Local admin credential used across the estate - identical local password fleet-wide, and something is exercising it",
+                             TargetDevices >= 10, "Local admin credential sprayed across many hosts - classic shared-local-password lateral movement",
+                             "Local admin credential reused across several hosts within the hour")
+  | extend Pattern = case(SourceHosts <= 1, "Single source host - consistent with a management sweep, confirm the tool and schedule",
+                          SourceHosts >= 5, "Many source hosts - the credential itself is circulating, not one tool using it",
+                          "Few source hosts - verify each is an administrative jump point")
+  // DistinctSids > 1 confirms these really are separate per-machine local accounts
+  // sharing a name and a secret, rather than one account seen repeatedly.
+  | extend SidEvidence = iff(DistinctSids > 1,
+                             strcat(tostring(DistinctSids), " distinct local SIDs - separate SAM accounts sharing a name and secret"),
+                             "Single SID - one account, verify whether the domain filter admitted a domain principal")
+  | extend FirstTargetHost = tostring(TargetList[0]),
+           FirstSourceIP   = tostring(SourceIPList[0])
+  | project TimeGenerated, AccountName, Assessment, Pattern, SidEvidence,
+            TargetDevices, SourceHosts, SourceIPs, DistinctSids, Logons, LogonTypes,
+            TargetList, SourceList, SourceIPList, FirstTargetHost, FirstSourceIP, FirstSeen
+  | sort by TargetDevices desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: AccountName
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: FirstTargetHost
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: FirstSourceIP
+customDetails:
+  TargetDeviceCount: TargetDevices
+  SourceHostCount: SourceHosts
+  DistinctLocalSids: DistinctSids
+  TargetDevices: TargetList
+  SourceHosts: SourceList
+  LogonTypes: LogonTypes
+  Pattern: Pattern
+  SidEvidence: SidEvidence
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Local admin {{AccountName}} authenticated to {{TargetDevices}} hosts'
+  alertDescriptionFormat: |
+    Local administrator account "{{AccountName}}" authenticated over the network to {{TargetDevices}}
+    distinct devices from {{SourceHosts}} source hosts within the detection window.
+    {{Assessment}} {{Pattern}} {{SidEvidence}}
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: P1D
+    matchingMethod: Selected
+    groupByEntities:
+      - Account
+version: 1.0.0
+kind: Scheduled

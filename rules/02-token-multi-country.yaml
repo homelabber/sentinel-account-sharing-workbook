@@ -1,0 +1,120 @@
+id: e7383975-04be-529e-bd10-e4dc0ccb69d3
+name: Account sharing - session or refresh token used from more than one country
+description: |
+  A single token identifier (UniqueTokenIdentifier) presented successfully from
+  IP addresses that geo-locate to more than one country.
+
+  A token is bound to a session, not to a person. The same token appearing in two
+  countries means the token itself moved — either lifted by an adversary-in-the-middle
+  proxy and replayed, or deliberately handed to a second person along with the
+  session. Both are worth an incident; the tradecraft and the arrangement are
+  indistinguishable from the telemetry alone.
+
+  Unlike a password-based sign-in, this cannot be explained by two people knowing
+  the same secret and authenticating independently — that would mint two distinct
+  tokens. One token, two countries, is a narrower and stronger finding.
+
+  Known benign causes: a mobile device roaming across a border mid-session, and
+  split-tunnel VPN clients that change egress country without re-authenticating.
+severity: High
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - AADNonInteractiveUserSignInLogs
+queryFrequency: PT1H
+queryPeriod: PT6H
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - CredentialAccess
+  - DefenseEvasion
+  - LateralMovement
+relevantTechniques:
+  - T1550.001
+  - T1539
+query: |
+  // --- tuning -------------------------------------------------------------
+  // MinCountries  2 is the intended setting. Raising it defeats the purpose.
+  // LookbackWindow widen to 24h to catch slow replay, at the cost of re-alerting
+  //               on long-lived tokens until suppression catches up.
+  let DetectionWindow = 1h;
+  let LookbackWindow  = 6h;
+  let MinCountries    = 2;
+  let ExcludedUsers   = dynamic(["none@example.invalid"]);
+  AADNonInteractiveUserSignInLogs
+  | where TimeGenerated > ago(LookbackWindow)
+  | where ResultType == 0
+  | where isnotempty(UniqueTokenIdentifier)
+  | extend UserPrincipalName = tolower(UserPrincipalName)
+  | where isnotempty(UserPrincipalName)
+  | where not(UserPrincipalName has_any (ExcludedUsers))
+  | extend Country = tostring(LocationDetails.countryOrRegion),
+           City    = tostring(LocationDetails.city)
+  | summarize Countries   = dcountif(Country, isnotempty(Country)),
+              IPs         = dcount(IPAddress),
+              ASNs        = dcountif(tostring(AutonomousSystemNumber), isnotempty(tostring(AutonomousSystemNumber))),
+              CountryList = make_set_if(Country, isnotempty(Country), 10),
+              CityList    = make_set_if(City, isnotempty(City), 10),
+              IPList      = make_set(IPAddress, 15),
+              Apps        = make_set(AppDisplayName, 10),
+              TokenType   = any(tostring(column_ifexists("IncomingTokenType", ""))),
+              Uses        = count(),
+              FirstUse    = min(TimeGenerated),
+              LastUse     = max(TimeGenerated)
+      by UserPrincipalName, UniqueTokenIdentifier
+  | where Countries >= MinCountries
+  // only surface tokens still in active use during this run's window
+  | where LastUse > ago(DetectionWindow)
+  | extend SpanMinutes = round(todouble(datetime_diff('second', LastUse, FirstUse)) / 60.0, 1)
+  | extend Assessment = case(Countries >= 3, "One token presented from three or more countries - replay is the only sane explanation",
+                             "One token presented from two countries - AiTM token theft or a deliberately shared session")
+  | extend AccountName      = tostring(split(UserPrincipalName, "@")[0]),
+           AccountUPNSuffix = tostring(split(UserPrincipalName, "@")[1]),
+           SampleIP         = tostring(IPList[0])
+  | project TimeGenerated = LastUse, UserPrincipalName, AccountName, AccountUPNSuffix,
+            Assessment, Countries, IPs, ASNs, Uses, SpanMinutes, TokenType,
+            UniqueTokenIdentifier, CountryList, CityList, IPList, Apps, FirstUse, LastUse, SampleIP
+  | sort by Countries desc, Uses desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+      - identifier: Name
+        columnName: AccountName
+      - identifier: UPNSuffix
+        columnName: AccountUPNSuffix
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: SampleIP
+customDetails:
+  DistinctCountries: Countries
+  DistinctIPs: IPs
+  DistinctASNs: ASNs
+  TokenUses: Uses
+  SpanMinutes: SpanMinutes
+  TokenType: TokenType
+  TokenId: UniqueTokenIdentifier
+  Countries: CountryList
+  Applications: Apps
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Token for {{UserPrincipalName}} used from {{Countries}} countries'
+  alertDescriptionFormat: |
+    A single token ({{TokenType}}) belonging to {{UserPrincipalName}} was presented successfully
+    {{Uses}} times from {{IPs}} IP addresses across {{Countries}} countries within {{SpanMinutes}}
+    minutes. {{Assessment}}
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: PT12H
+    matchingMethod: Selected
+    groupByEntities:
+      - Account
+version: 1.0.0
+kind: Scheduled

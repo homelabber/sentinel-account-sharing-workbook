@@ -2,7 +2,7 @@
 
 A Microsoft Sentinel workbook that correlates **Microsoft Defender for Identity**, **Microsoft Entra ID**, **Microsoft Defender for Endpoint** and **Sentinel UEBA** into a single view of account sharing, credential reuse, and the red-team tradecraft used to obtain and reuse other people's credentials.
 
-**11 tabs · 54 query panels · 17 tunable parameters · ~9,000 words of built-in guidance.**
+**11 tabs · 54 query panels · 17 tunable parameters · 6 analytics rules · ~9,000 words of built-in guidance.**
 
 ---
 
@@ -102,6 +102,21 @@ No parameters need setting to get a first result — every threshold ships with 
 3. Work the **Overview** scorecard top-down, reading **Drivers** before the counts.
 4. Pivot to **Account Drilldown** for anything you intend to act on.
 
+### Then the alerts
+
+Once the workbook is tuned, deploy the analytics rules so the findings come to you
+rather than waiting to be looked at:
+
+```bash
+az deployment group create \
+  --resource-group <rg-holding-the-workspace> \
+  --template-file AccountSharingAnalyticsRules.json \
+  --parameters workspaceName=<your-sentinel-workspace>
+```
+
+See [`rules/README.md`](rules/README.md) for the recommended enablement order and
+what to tune first.
+
 ---
 
 ## The sharing score
@@ -180,6 +195,7 @@ Stated plainly, because knowing the limits is part of using it:
 
 - **It cannot prove sharing.** Concurrency + geo-velocity + device fan-out together justify opening a case. No single panel does.
 - **It cannot enforce anything.** A workbook is a visualisation surface. Containment belongs in Conditional Access, Entra ID Protection risk policies, and Defender XDR attack disruption.
+- **It cannot alert on its own.** No workbook can. The six rules in [`rules/`](rules/) are what turn the highest-value panels into incidents.
 - **It cannot do inline enforcement on AD protocols** — stepping up to MFA mid-Kerberos-authentication is an agent/proxy function, not something any workbook can replicate.
 - **Non-interactive sign-ins are noisy by design.** Weight interactive evidence more heavily.
 
@@ -203,11 +219,21 @@ No external documentation needed. The workbook carries ~9,000 words in 20 collap
 
 ```
 AccountSharingVisibility.workbook.json   ← paste this into Sentinel
+AccountSharingAnalyticsRules.json        ← ARM template, all six analytics rules
 Collect-ADPasswordQuality.ps1            ← optional Tier 1 password-reuse collector
 Diagnostic.workbook.json                 ← 6-step troubleshooter
 
+rules/
+  01-geo-velocity.yaml               analytics rules, in priority order
+  02-token-multi-country.yaml
+  03-honeytoken-auth.yaml
+  04-generic-account-new-host.yaml
+  05-shared-mfa-factor.yaml
+  06-local-admin-fanout.yaml
+
 src/
   build.py            workbook generator
+  build_rules.py      analytics rule ARM generator
   kql_overview.py     overview, concurrency, fan-out queries
   kql_detail.py       hygiene, generic, on-prem, local, red-team, drilldown
   kql_pwreuse.py      password-reuse approximation, coverage
@@ -217,14 +243,17 @@ src/
 tests/
   check_structure.py  portal-contract validation
   check_dynamic.py    post-union dynamic-access linter
+  check_rules.py      analytics rule contract: entity, detail and placeholder columns
   compare_schema.py   diff against Microsoft's shipping schema
   test_checker.py     11 regression tests
   test_dynamic.py     3 regression tests
+  test_rules_checker.py  13 regression tests
   validate.ps1        KQL syntax (Kusto.Language parser)
+  validate_rules.ps1  KQL syntax + semantics for the analytics rules
   semantic.ps1        KQL semantic analysis against real table schemas
 ```
 
-Rebuild with `python src/build.py`.
+Rebuild with `python src/build.py` and `python src/build_rules.py`.
 
 ---
 
@@ -236,25 +265,39 @@ The workbook is generated and verified rather than hand-written. Valid JSON with
 |---|---|
 | KQL syntax (Microsoft `Kusto.Language` parser) | 55/55 |
 | KQL semantic analysis vs. real table schemas | 55/55 |
+| Analytics rule KQL — syntax and semantics | 6/6 |
+| Analytics rule portal contract | pass |
 | Dropdown schema vs. 280 shipping Microsoft workbooks | 13/13 |
 | Portal-contract structure | pass |
 | Post-union dynamic access | pass |
-| Regression suites | 11/11 · 3/3 |
+| Regression suites | 11/11 · 3/3 · 13/13 |
 
-Every regression test reintroduces a bug that genuinely broke the portal — including a dropdown that hangs on `<unset>`, a grid config landing in the visualization slot, and `Failed to resolve expression 'DeviceDetail.deviceId'`. The linters are tested against the bugs they claim to catch, because a green check from an untested checker is worse than no checker.
+Every regression test reintroduces a bug that genuinely broke the portal — including a dropdown that hangs on `<unset>`, a grid config landing in the visualization slot, and `Failed to resolve expression 'DeviceDetail.deviceId'`. The analytics-rule suite adds the rule equivalents: an entity mapping naming a column the query never projects, which Sentinel accepts and then creates entity-less incidents from, and a `queryPeriod` shorter than the `queryFrequency`, which silently drops every event arriving between runs. The linters are tested against the bugs they claim to catch, because a green check from an untested checker is worse than no checker.
 
 ---
 
 ## Recommended Analytics Rules
 
-A workbook cannot alert. The highest-value panels to promote, in order:
+A workbook cannot alert. The highest-value panels are shipped as six deployable
+scheduled rules in [`rules/`](rules/), in the order they are worth enabling:
 
-1. Geo-velocity violations above 1,500 km/h
-2. Session or refresh token used from more than one country
-3. Any honeytoken authentication
-4. A generic-named account performing an interactive logon from a new host
-5. One MFA factor newly registered against a third distinct account
-6. A local administrator account authenticating over the network to 5+ hosts
+| # | Rule | Severity |
+|---|---|---|
+| 1 | Geo-velocity violations above 1,500 km/h | High |
+| 2 | Session or refresh token used from more than one country | High |
+| 3 | Any honeytoken authentication | High |
+| 4 | A generic-named account performing an interactive logon from a new host | Medium |
+| 5 | One MFA factor newly registered against a third distinct account | Medium |
+| 6 | A local administrator account authenticating over the network to 5+ hosts | Medium |
+
+Deploy all six with [`AccountSharingAnalyticsRules.json`](AccountSharingAnalyticsRules.json),
+or copy individual queries out of the YAML. Each rule carries a tuning block naming
+every threshold, and separates its **lookback** from its **detection window** so one
+finding alerts once rather than on every run.
+
+Read [`rules/README.md`](rules/README.md) before enabling rules 1 and 6 — in an
+estate with centralised VPN egress, or without LAPS, both will correctly report a
+condition that is not worth a page until the known-good patterns are excluded.
 
 ---
 

@@ -1,0 +1,133 @@
+id: b39319dc-3b0f-5356-bd9c-f2f8daed3d62
+name: Account sharing - one MFA factor newly registered against a third account
+description: |
+  A single authentication factor — a phone number, an email address or an
+  authenticator device — becomes bound to a third distinct account, with the
+  registration that crossed that threshold occurring in this detection window.
+
+  Two accounts sharing a recovery factor is common and usually benign: an
+  administrator with a separate privileged identity, or a contractor with a second
+  tenant account. Three is where the explanation stops being tidy. A factor
+  registered against three or more identities means one person can complete
+  multi-factor authentication for all of them, or that one phone is the recovery
+  path for a set of accounts that are supposed to be independent.
+
+  This is the control-plane version of account sharing. It does not require anyone
+  to have shared a password — whoever holds the factor can reset their way into
+  every account bound to it.
+
+  PRIVACY NOTE: the alert carries the factor value, which may be a personal phone
+  number or email address. That is what makes the alert actionable, but it means
+  these incidents inherit the sensitivity of the directory. Restrict access to the
+  incident accordingly.
+severity: Medium
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - AuditLogs
+queryFrequency: PT1H
+queryPeriod: P14D
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - Persistence
+  - CredentialAccess
+relevantTechniques:
+  - T1098.005
+  - T1556.006
+query: |
+  // --- tuning -------------------------------------------------------------
+  // MinAccountsPerFactor  3 is the intended setting. Drop to 2 only if you have
+  //   already eliminated admin//priv account pairs, or this will be all noise.
+  // BaselineWindow  the longest window the scheduled-rule engine allows is 14d.
+  //   Factors bound to a third account more than 14 days apart are caught by the
+  //   Credential Hygiene tab in the workbook, not by this rule.
+  let DetectionWindow      = 1h;
+  let BaselineWindow       = 14d;
+  let MinAccountsPerFactor = 3;
+  let registrations = materialize(
+      AuditLogs
+      | where TimeGenerated > ago(BaselineWindow)
+      | where OperationName has_any ("security info", "StrongAuthentication", "authentication method", "Update user")
+      | extend Target = tolower(tostring(TargetResources[0].userPrincipalName))
+      | where isnotempty(Target)
+      | mv-expand mp = TargetResources[0].modifiedProperties
+      | extend PropName = tostring(mp.displayName), NewVal = tostring(mp.newValue)
+      | where PropName has_any ("PhoneNumber", "AlternativePhoneNumber", "StrongAuthenticationUserDetails",
+                                "StrongAuthenticationPhoneAppDetail", "Email", "VoiceOnlyPhoneNumber")
+      | extend Raw = replace_string(replace_string(replace_string(NewVal, '"', ''), '[', ''), ']', '')
+      | extend Method = trim(@"[\s\\]+", Raw)
+      | where isnotempty(Method) and Method !in ("", "null", "[]")
+      | extend MethodType = case(PropName has "PhoneApp", "Authenticator device",
+                                 PropName has "Phone",    "Phone number",
+                                 PropName has "Email",    "Email address",
+                                 PropName)
+      | extend Actor = tolower(tostring(InitiatedBy.user.userPrincipalName))
+      | project TimeGenerated, Target, Actor, MethodType, Method, OperationName, Result
+  );
+  // the account whose registration was most recent for each factor, resolved in
+  // its own step - arg_max alongside other aggregates would prefix its output
+  // columns and silently break the entity mapping
+  let latestPerFactor = registrations
+      | summarize arg_max(TimeGenerated, Target, MethodType) by Method
+      | project Method, LatestTarget = Target, LatestType = MethodType;
+  // factors whose account count reached the threshold, where the most recent
+  // registration landed in this run's window - so the alert fires on the change
+  registrations
+  | summarize AccountsSharing = dcount(Target),
+              Accounts        = make_set(Target, 25),
+              Registrations   = count(),
+              Actors          = make_set_if(Actor, isnotempty(Actor), 10),
+              FirstSeen       = min(TimeGenerated),
+              LastSeen        = max(TimeGenerated)
+      by Method
+  | where AccountsSharing >= MinAccountsPerFactor
+  | where LastSeen > ago(DetectionWindow)
+  | join kind=inner latestPerFactor on Method
+  | extend Assessment = case(AccountsSharing >= 5, "One factor now controls five or more accounts - a single person can complete MFA for all of them",
+                             "One factor now controls three or more accounts - past the point where an admin second-account pair explains it")
+  | extend UserPrincipalName = LatestTarget,
+           MethodType        = LatestType,
+           AccountName       = tostring(split(LatestTarget, "@")[0]),
+           AccountUPNSuffix  = tostring(split(LatestTarget, "@")[1])
+  | extend SpanDays = round(todouble(datetime_diff('hour', LastSeen, FirstSeen)) / 24.0, 1)
+  | project TimeGenerated = LastSeen, UserPrincipalName, AccountName, AccountUPNSuffix,
+            MethodType, Method, AccountsSharing, Assessment, Accounts, Registrations,
+            Actors, SpanDays, FirstSeen, LastSeen
+  | sort by AccountsSharing desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+      - identifier: Name
+        columnName: AccountName
+      - identifier: UPNSuffix
+        columnName: AccountUPNSuffix
+customDetails:
+  FactorType: MethodType
+  Factor: Method
+  AccountsSharing: AccountsSharing
+  Accounts: Accounts
+  RegisteredBy: Actors
+  Registrations: Registrations
+  SpanDays: SpanDays
+alertDetailsOverride:
+  alertDisplayNameFormat: 'One {{MethodType}} now registered against {{AccountsSharing}} accounts'
+  alertDescriptionFormat: |
+    A single {{MethodType}} is now registered as an authentication factor against {{AccountsSharing}}
+    distinct accounts, the most recent being {{UserPrincipalName}}. {{Assessment}} Whoever holds
+    this factor can complete multi-factor authentication, or drive account recovery, for every
+    account bound to it.
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: P1D
+    matchingMethod: AllEntities
+version: 1.0.0
+kind: Scheduled

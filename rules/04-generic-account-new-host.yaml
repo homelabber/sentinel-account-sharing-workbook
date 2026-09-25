@@ -1,0 +1,150 @@
+id: 1c2bce63-42b2-5403-8af4-a9e7984c932e
+name: Account sharing - generic or service account interactive logon from a new host
+description: |
+  An account whose name matches the generic/service naming pattern (svc-, shared-,
+  admin-, training-, kiosk-, scanner- and similar) performs an interactive logon
+  from a host it has never been seen on in the preceding 14 days.
+
+  Two things make this interesting together. A genuine service account should not
+  log on interactively at all — it should authenticate as a service, a batch job or
+  an application. And an account with no real owner spreading to a new endpoint is
+  how a shared credential propagates through an organisation: someone needed it,
+  someone else gave it to them, and now it lives on another machine.
+
+  The 14-day baseline is what keeps this quiet. A service account that has always
+  run interactively from the same two jump boxes never fires. The alert is the
+  change, not the condition.
+
+  Accounts with no baseline activity at all are deliberately excluded — a newly
+  created account's first logon is provisioning, not spread. It will alert on its
+  second distinct host instead.
+severity: Medium
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+  - connectorId: MicrosoftThreatProtection
+    dataTypes:
+      - IdentityLogonEvents
+queryFrequency: PT1H
+queryPeriod: P14D
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - LateralMovement
+  - CredentialAccess
+relevantTechniques:
+  - T1078.002
+  - T1078.004
+query: |
+  // --- tuning -------------------------------------------------------------
+  // BaselineWindow  shorten to 7d in a fast-moving estate; anything under 7d
+  //                 starts alerting on normal rotation between jump boxes.
+  // GenericRx       trim terms that are legitimate naming convention in your
+  //                 tenant before you tune anything else, or you will tune
+  //                 thresholds around noise you could have deleted.
+  let DetectionWindow = 1h;
+  let BaselineWindow  = 14d;
+  let GenericRx = @"(?i)(^|[._\-])(svc|service|shared|generic|common|team|group|dept|admin|administrator|adm|test|tst|temp|tmp|training|train|demo|kiosk|lobby|frontdesk|reception|scanner|scan|printer|print|copier|fax|conf|conference|room|guest|intern|contractor|vendor|support|helpdesk|sql|oracle|backup|batch|task|sched|robot|bot|rpa|automation|integration|api|app|monitor|nagios|zabbix|splunk|jenkins|build|deploy)([._\-]|[0-9]|@|$)";
+  let ExcludedUsers = dynamic(["none@example.invalid"]);
+  let logons = materialize(
+      union isfuzzy=true
+        (SigninLogs
+           | where TimeGenerated > ago(BaselineWindow)
+           | where ResultType == 0
+           | extend UserPrincipalName = tolower(UserPrincipalName)
+           | extend Host = tostring(DeviceDetail.displayName)
+           | project TimeGenerated, UserPrincipalName, Host,
+                     Source    = "Entra interactive",
+                     LogonKind = strcat(ClientAppUsed, " / ", AppDisplayName),
+                     IPAddress = IPAddress,
+                     Location  = strcat(tostring(LocationDetails.city), ", ", tostring(LocationDetails.countryOrRegion))),
+        (IdentityLogonEvents
+           | where TimeGenerated > ago(BaselineWindow)
+           | where ActionType == "LogonSuccess"
+           | where LogonType in ("Interactive", "Remote interactive")
+           | extend UserPrincipalName = tolower(coalesce(AccountUpn, strcat(AccountName, "@", AccountDomain)))
+           | extend Host = coalesce(DeviceName, TargetDeviceName)
+           | project TimeGenerated, UserPrincipalName, Host,
+                     Source    = "On-prem AD (MDI)",
+                     LogonKind = LogonType,
+                     IPAddress = IPAddress,
+                     Location  = coalesce(Location, ""))
+      | where isnotempty(UserPrincipalName) and isnotempty(Host)
+      | where not(UserPrincipalName has_any (ExcludedUsers))
+      | where UserPrincipalName matches regex GenericRx
+  );
+  let baseline = logons
+      | where TimeGenerated between (ago(BaselineWindow) .. ago(DetectionWindow))
+      | summarize BaselineLogons = count() by UserPrincipalName, Host;
+  // accounts that actually have a history - a brand new account's first logon is
+  // provisioning, not spread, so it should not raise an incident
+  let establishedAccounts = baseline
+      | summarize KnownHosts = dcount(Host), HostList = make_set(Host, 25) by UserPrincipalName;
+  logons
+  | where TimeGenerated > ago(DetectionWindow)
+  | join kind=leftanti baseline on UserPrincipalName, Host
+  | join kind=inner establishedAccounts on UserPrincipalName
+  | summarize TimeGenerated  = max(TimeGenerated),
+              FirstSeenHere  = min(TimeGenerated),
+              Logons         = count(),
+              LogonKinds     = make_set(LogonKind, 6),
+              IPAddress      = any(IPAddress),
+              Location       = any(Location),
+              Source         = any(Source),
+              KnownHosts     = any(KnownHosts),
+              PreviousHosts  = any(HostList)
+      by UserPrincipalName, Host
+  | extend Assessment = case(KnownHosts >= 5, strcat("Generic account already seen on ", tostring(KnownHosts), " hosts has reached another - this credential is circulating"),
+                             KnownHosts >= 2, "Generic account spreading to an additional host - verify who was given it and why",
+                             "Generic account has left its usual host for the first time")
+  | extend AccountName      = tostring(split(UserPrincipalName, "@")[0]),
+           AccountUPNSuffix = tostring(split(UserPrincipalName, "@")[1])
+  | project TimeGenerated, UserPrincipalName, AccountName, AccountUPNSuffix, Host,
+            Assessment, Source, Logons, LogonKinds, KnownHosts, PreviousHosts,
+            IPAddress, Location, FirstSeenHere
+  | sort by KnownHosts desc, TimeGenerated desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: UserPrincipalName
+      - identifier: Name
+        columnName: AccountName
+      - identifier: UPNSuffix
+        columnName: AccountUPNSuffix
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: Host
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: IPAddress
+customDetails:
+  NewHost: Host
+  KnownHostCount: KnownHosts
+  PreviousHosts: PreviousHosts
+  LogonKinds: LogonKinds
+  Telemetry: Source
+  Location: Location
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Generic account {{UserPrincipalName}} logged on interactively from new host {{Host}}'
+  alertDescriptionFormat: |
+    {{UserPrincipalName}} matches the generic/service account naming pattern and performed an
+    interactive logon from {{Host}}, which it has not been seen on in the preceding baseline.
+    It was already known on {{KnownHosts}} other hosts. {{Assessment}}
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: P1D
+    matchingMethod: Selected
+    groupByEntities:
+      - Account
+version: 1.0.0
+kind: Scheduled

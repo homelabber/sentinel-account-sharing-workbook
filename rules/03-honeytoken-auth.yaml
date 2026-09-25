@@ -1,0 +1,159 @@
+id: 0eeee245-e22f-5f0d-9df9-d56fd846dc5d
+name: Account sharing - honeytoken account authentication
+description: |
+  Any authentication attempt involving a honeytoken account — success or failure,
+  cloud or on-premises.
+
+  A honeytoken is a decoy identity that no person, script or service has any
+  legitimate reason to touch. It is the only zero-false-positive signal in the
+  Account and Credential Sharing workbook: a hit means someone enumerated the
+  directory, harvested a credential store, or was handed a list of accounts.
+  There is no benign explanation to rule out first.
+
+  Three sources are covered:
+    * accounts named explicitly in HoneytokenAccounts below
+    * identities tagged as honeytokens in Defender for Identity
+    * Defender for Identity's own honeytoken alerts
+
+  IMPORTANT: this rule does nothing until you either tag honeytoken accounts in
+  Defender for Identity (Settings > Identities > Entity tags > Honeytoken) or list
+  them in HoneytokenAccounts. An empty result here means none are configured — which
+  is itself the finding, and the cheapest detection win available.
+
+  Deliberately fires on failures as well as successes. A failed honeytoken logon is
+  an attacker guessing, and is just as interesting as a successful one.
+severity: High
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes:
+      - SigninLogs
+  - connectorId: MicrosoftThreatProtection
+    dataTypes:
+      - IdentityLogonEvents
+      - IdentityDirectoryEvents
+queryFrequency: PT15M
+queryPeriod: PT15M
+triggerOperator: gt
+triggerThreshold: 0
+status: Available
+tactics:
+  - CredentialAccess
+  - Discovery
+  - InitialAccess
+relevantTechniques:
+  - T1078
+  - T1087
+query: |
+  // --- tuning -------------------------------------------------------------
+  // HoneytokenAccounts  list every decoy account, lowercase. Match is on the
+  //   account name (SAM) or the full UPN, so either form works. Leave the
+  //   placeholder in place and the rule relies solely on MDI honeytoken tagging.
+  let DetectionWindow     = 15m;
+  let HoneytokenAccounts  = dynamic([
+      "ht-domainadmin-backup"
+  ]);
+  let isHoneytoken = (name: string, upn: string)
+  {
+      tolower(name) in (HoneytokenAccounts) or tolower(upn) in (HoneytokenAccounts)
+  };
+  union isfuzzy=true
+    (SigninLogs
+       | where TimeGenerated > ago(DetectionWindow)
+       | extend UserPrincipalName = tolower(UserPrincipalName)
+       | extend SamName = tostring(split(UserPrincipalName, "@")[0])
+       | where isHoneytoken(SamName, UserPrincipalName)
+       | project TimeGenerated,
+                 Source     = "Entra ID sign-in",
+                 Account    = UserPrincipalName,
+                 Outcome    = iff(ResultType == 0, "Success", strcat("Failure (", tostring(ResultType), ")")),
+                 Detail     = strcat(ClientAppUsed, " / ", AppDisplayName),
+                 Host       = tostring(DeviceDetail.displayName),
+                 IPAddress  = IPAddress,
+                 Location   = strcat(tostring(LocationDetails.city), ", ", tostring(LocationDetails.countryOrRegion))),
+    (IdentityLogonEvents
+       | where TimeGenerated > ago(DetectionWindow)
+       | extend AccountUpnLower = tolower(coalesce(AccountUpn, strcat(AccountName, "@", AccountDomain)))
+       | where isHoneytoken(AccountName, AccountUpnLower)
+             or tostring(AdditionalFields) has "oneytoken"
+       | project TimeGenerated,
+                 Source     = "On-prem AD (MDI)",
+                 Account    = AccountUpnLower,
+                 Outcome    = ActionType,
+                 Detail     = strcat(coalesce(LogonType, ""), " ", coalesce(Protocol, "")),
+                 Host       = coalesce(DeviceName, TargetDeviceName),
+                 IPAddress  = IPAddress,
+                 Location   = coalesce(Location, "")),
+    (IdentityDirectoryEvents
+       | where TimeGenerated > ago(DetectionWindow)
+       | extend AccountUpnLower = tolower(coalesce(AccountUpn, strcat(AccountName, "@", AccountDomain))),
+                TargetUpnLower  = tolower(coalesce(TargetAccountUpn, ""))
+       | where isHoneytoken(AccountName, AccountUpnLower)
+             or isHoneytoken(TargetAccountDisplayName, TargetUpnLower)
+             or tostring(AdditionalFields) has "oneytoken"
+       | project TimeGenerated,
+                 Source     = "On-prem AD directory activity (MDI)",
+                 Account    = coalesce(iff(isempty(TargetUpnLower), "", TargetUpnLower), AccountUpnLower),
+                 Outcome    = ActionType,
+                 Detail     = coalesce(Protocol, ""),
+                 Host       = coalesce(DeviceName, DestinationDeviceName),
+                 IPAddress  = IPAddress,
+                 Location   = coalesce(Location, "")),
+    (SecurityAlert
+       | where TimeGenerated > ago(DetectionWindow)
+       | where AlertName has "oneytoken"
+       | project TimeGenerated,
+                 Source     = "Defender for Identity alert",
+                 Account    = tolower(tostring(CompromisedEntity)),
+                 Outcome    = AlertName,
+                 Detail     = Description,
+                 Host       = "",
+                 IPAddress  = "",
+                 Location   = "")
+  | where isnotempty(Account)
+  | extend AccountName      = tostring(split(Account, "@")[0]),
+           AccountUPNSuffix = tostring(split(Account, "@")[1])
+  | extend Assessment = "Honeytoken touched - no legitimate process authenticates as this identity. Treat as credential harvesting or directory enumeration until proven otherwise."
+  | project TimeGenerated, Account, AccountName, AccountUPNSuffix, Source, Outcome,
+            Assessment, Detail, Host, IPAddress, Location
+  | sort by TimeGenerated desc
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: Account
+      - identifier: Name
+        columnName: AccountName
+      - identifier: UPNSuffix
+        columnName: AccountUPNSuffix
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: Host
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: IPAddress
+customDetails:
+  Signal: Source
+  Outcome: Outcome
+  Detail: Detail
+  Location: Location
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Honeytoken {{Account}} touched - {{Outcome}}'
+  alertDescriptionFormat: |
+    Honeytoken account {{Account}} was involved in authentication activity observed by {{Source}}
+    ({{Outcome}}) from host {{Host}} / {{IPAddress}} {{Location}}. No legitimate process
+    authenticates as this identity.
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: true
+    lookbackDuration: PT24H
+    matchingMethod: Selected
+    groupByEntities:
+      - Account
+version: 1.0.0
+kind: Scheduled

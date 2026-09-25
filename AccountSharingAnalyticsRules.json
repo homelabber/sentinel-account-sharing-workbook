@@ -1,0 +1,552 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Analytics rules accompanying the Account & Credential Sharing Sentinel workbook. Generated from rules/*.yaml by src/build_rules.py - edit the YAML, not this file."
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Log Analytics workspace that Microsoft Sentinel is enabled on."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region of the workspace."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/d9dc6fe9-883a-55ce-9277-78dfd6bac552')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - geo-velocity exceeds commercial flight",
+        "description": "Two successful sign-ins for the same account whose separation in space and time\nrequires travelling faster than 1,500 km/h — quicker than any commercial flight,\nbefore boarding, taxi and transit are even considered.\n\nDistance is computed from the raw geo-coordinates on the sign-in records with\ngeo_distance_2points, not read from Entra ID Protection. The rule therefore works\nwithout a P2 licence and the arithmetic is auditable: RequiredSpeedKmh, DistanceKm\nand ElapsedHours all appear on the alert.\n\nThis is the single strongest sharing indicator available in sign-in telemetry.\nIt is not proof — a corporate VPN, a cloud egress point or a mobile carrier\nbackhauling traffic to a distant PoP all produce the same arithmetic. Check the\nSameNetwork field and the named exclusions before escalating.",
+        "severity": "High",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// MinSpeedKmh   raise to 2000+ to cut VPN/egress noise, lower to 900 to catch\n//               slower anomalies at the cost of many more false positives.\n// MinDistanceKm below ~150 km, city-level geo-IP error dominates the result.\n// ExcludedUsers break-glass, scanners, backup/RMM and sanctioned kiosks.\nlet DetectionWindow = 1h;\nlet LookbackWindow  = 6h;\nlet MinSpeedKmh     = 1500.0;\nlet MinDistanceKm   = 150.0;\nlet ExcludedUsers   = dynamic([\"none@example.invalid\"]);\nSigninLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where ResultType == 0\n| extend UserPrincipalName = tolower(UserPrincipalName)\n| where isnotempty(UserPrincipalName)\n| where not(UserPrincipalName has_any (ExcludedUsers))\n| extend Lat     = toreal(LocationDetails.geoCoordinates.latitude),\n         Lon     = toreal(LocationDetails.geoCoordinates.longitude),\n         City    = tostring(LocationDetails.city),\n         Country = tostring(LocationDetails.countryOrRegion)\n| where isnotnull(Lat) and isnotnull(Lon)\n| project TimeGenerated, UserPrincipalName, IPAddress, Lat, Lon, City, Country,\n          AppDisplayName, ASN = tostring(column_ifexists(\"AutonomousSystemNumber\", \"\")),\n          UserAgent = tostring(column_ifexists(\"UserAgent\", \"\"))\n| sort by UserPrincipalName asc, TimeGenerated asc\n| extend pUser    = prev(UserPrincipalName), pTime = prev(TimeGenerated),\n         pLat     = prev(Lat),  pLon     = prev(Lon),\n         pIP      = prev(IPAddress), pCity = prev(City),\n         pCountry = prev(Country), pASN   = prev(ASN)\n| where pUser == UserPrincipalName\n// only alert on pairs whose later sign-in landed in this run's window, so one\n// violation is reported once rather than on every run for LookbackWindow\n| where TimeGenerated > ago(DetectionWindow)\n| extend DistanceKm   = round(geo_distance_2points(pLon, pLat, Lon, Lat) / 1000.0, 1)\n| extend ElapsedHours = round(todouble(datetime_diff('second', TimeGenerated, pTime)) / 3600.0, 4)\n| where DistanceKm > MinDistanceKm and ElapsedHours >= 0\n| extend RequiredSpeedKmh = iff(ElapsedHours <= 0.0, 999999.0, round(DistanceKm / ElapsedHours, 0))\n| where RequiredSpeedKmh > MinSpeedKmh\n| extend Verdict = case(RequiredSpeedKmh > 5000, \"Physically impossible - concurrent use or proxy\",\n                        \"Impossible without a flight - very likely shared\")\n| extend SameNetwork = iff(isnotempty(ASN) and ASN == pASN, \"Yes - single ASN, suspect VPN or carrier egress\", \"No\")\n| extend AccountName      = tostring(split(UserPrincipalName, \"@\")[0]),\n         AccountUPNSuffix = tostring(split(UserPrincipalName, \"@\")[1])\n| project TimeGenerated, UserPrincipalName, AccountName, AccountUPNSuffix, Verdict,\n          RequiredSpeedKmh, DistanceKm, ElapsedHours, SameNetwork,\n          FromCity = pCity, FromCountry = pCountry, FromIP = pIP,\n          ToCity = City, ToCountry = Country, ToIP = IPAddress,\n          AppDisplayName, UserAgent, ASN\n| sort by RequiredSpeedKmh desc",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT6H",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "InitialAccess",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1078"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT12H",
+            "matchingMethod": "Selected",
+            "groupByEntities": [
+              "Account"
+            ]
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Geo-velocity {{RequiredSpeedKmh}} km/h for {{UserPrincipalName}}",
+          "alertDescriptionFormat": "{{UserPrincipalName}} signed in from {{FromCity}}, {{FromCountry}} ({{FromIP}}) and then from\n{{ToCity}}, {{ToCountry}} ({{ToIP}}) — {{DistanceKm}} km apart in {{ElapsedHours}} hours,\nrequiring {{RequiredSpeedKmh}} km/h. Single-ASN path: {{SameNetwork}}.\n"
+        },
+        "customDetails": {
+          "RequiredSpeedKmh": "RequiredSpeedKmh",
+          "DistanceKm": "DistanceKm",
+          "ElapsedHours": "ElapsedHours",
+          "FromLocation": "FromCity",
+          "ToLocation": "ToCity",
+          "SameNetwork": "SameNetwork",
+          "Application": "AppDisplayName"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserPrincipalName"
+              },
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              },
+              {
+                "identifier": "UPNSuffix",
+                "columnName": "AccountUPNSuffix"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "ToIP"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "FromIP"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/e7383975-04be-529e-bd10-e4dc0ccb69d3')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - session or refresh token used from more than one country",
+        "description": "A single token identifier (UniqueTokenIdentifier) presented successfully from\nIP addresses that geo-locate to more than one country.\n\nA token is bound to a session, not to a person. The same token appearing in two\ncountries means the token itself moved — either lifted by an adversary-in-the-middle\nproxy and replayed, or deliberately handed to a second person along with the\nsession. Both are worth an incident; the tradecraft and the arrangement are\nindistinguishable from the telemetry alone.\n\nUnlike a password-based sign-in, this cannot be explained by two people knowing\nthe same secret and authenticating independently — that would mint two distinct\ntokens. One token, two countries, is a narrower and stronger finding.\n\nKnown benign causes: a mobile device roaming across a border mid-session, and\nsplit-tunnel VPN clients that change egress country without re-authenticating.",
+        "severity": "High",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// MinCountries  2 is the intended setting. Raising it defeats the purpose.\n// LookbackWindow widen to 24h to catch slow replay, at the cost of re-alerting\n//               on long-lived tokens until suppression catches up.\nlet DetectionWindow = 1h;\nlet LookbackWindow  = 6h;\nlet MinCountries    = 2;\nlet ExcludedUsers   = dynamic([\"none@example.invalid\"]);\nAADNonInteractiveUserSignInLogs\n| where TimeGenerated > ago(LookbackWindow)\n| where ResultType == 0\n| where isnotempty(UniqueTokenIdentifier)\n| extend UserPrincipalName = tolower(UserPrincipalName)\n| where isnotempty(UserPrincipalName)\n| where not(UserPrincipalName has_any (ExcludedUsers))\n| extend Country = tostring(LocationDetails.countryOrRegion),\n         City    = tostring(LocationDetails.city)\n| summarize Countries   = dcountif(Country, isnotempty(Country)),\n            IPs         = dcount(IPAddress),\n            ASNs        = dcountif(tostring(AutonomousSystemNumber), isnotempty(tostring(AutonomousSystemNumber))),\n            CountryList = make_set_if(Country, isnotempty(Country), 10),\n            CityList    = make_set_if(City, isnotempty(City), 10),\n            IPList      = make_set(IPAddress, 15),\n            Apps        = make_set(AppDisplayName, 10),\n            TokenType   = any(tostring(column_ifexists(\"IncomingTokenType\", \"\"))),\n            Uses        = count(),\n            FirstUse    = min(TimeGenerated),\n            LastUse     = max(TimeGenerated)\n    by UserPrincipalName, UniqueTokenIdentifier\n| where Countries >= MinCountries\n// only surface tokens still in active use during this run's window\n| where LastUse > ago(DetectionWindow)\n| extend SpanMinutes = round(todouble(datetime_diff('second', LastUse, FirstUse)) / 60.0, 1)\n| extend Assessment = case(Countries >= 3, \"One token presented from three or more countries - replay is the only sane explanation\",\n                           \"One token presented from two countries - AiTM token theft or a deliberately shared session\")\n| extend AccountName      = tostring(split(UserPrincipalName, \"@\")[0]),\n         AccountUPNSuffix = tostring(split(UserPrincipalName, \"@\")[1]),\n         SampleIP         = tostring(IPList[0])\n| project TimeGenerated = LastUse, UserPrincipalName, AccountName, AccountUPNSuffix,\n          Assessment, Countries, IPs, ASNs, Uses, SpanMinutes, TokenType,\n          UniqueTokenIdentifier, CountryList, CityList, IPList, Apps, FirstUse, LastUse, SampleIP\n| sort by Countries desc, Uses desc",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT6H",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess",
+          "DefenseEvasion",
+          "LateralMovement"
+        ],
+        "techniques": [
+          "T1550.001",
+          "T1539"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "PT12H",
+            "matchingMethod": "Selected",
+            "groupByEntities": [
+              "Account"
+            ]
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Token for {{UserPrincipalName}} used from {{Countries}} countries",
+          "alertDescriptionFormat": "A single token ({{TokenType}}) belonging to {{UserPrincipalName}} was presented successfully\n{{Uses}} times from {{IPs}} IP addresses across {{Countries}} countries within {{SpanMinutes}}\nminutes. {{Assessment}}\n"
+        },
+        "customDetails": {
+          "DistinctCountries": "Countries",
+          "DistinctIPs": "IPs",
+          "DistinctASNs": "ASNs",
+          "TokenUses": "Uses",
+          "SpanMinutes": "SpanMinutes",
+          "TokenType": "TokenType",
+          "TokenId": "UniqueTokenIdentifier",
+          "Countries": "CountryList",
+          "Applications": "Apps"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserPrincipalName"
+              },
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              },
+              {
+                "identifier": "UPNSuffix",
+                "columnName": "AccountUPNSuffix"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "SampleIP"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/0eeee245-e22f-5f0d-9df9-d56fd846dc5d')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - honeytoken account authentication",
+        "description": "Any authentication attempt involving a honeytoken account — success or failure,\ncloud or on-premises.\n\nA honeytoken is a decoy identity that no person, script or service has any\nlegitimate reason to touch. It is the only zero-false-positive signal in the\nAccount and Credential Sharing workbook: a hit means someone enumerated the\ndirectory, harvested a credential store, or was handed a list of accounts.\nThere is no benign explanation to rule out first.\n\nThree sources are covered:\n  * accounts named explicitly in HoneytokenAccounts below\n  * identities tagged as honeytokens in Defender for Identity\n  * Defender for Identity's own honeytoken alerts\n\nIMPORTANT: this rule does nothing until you either tag honeytoken accounts in\nDefender for Identity (Settings > Identities > Entity tags > Honeytoken) or list\nthem in HoneytokenAccounts. An empty result here means none are configured — which\nis itself the finding, and the cheapest detection win available.\n\nDeliberately fires on failures as well as successes. A failed honeytoken logon is\nan attacker guessing, and is just as interesting as a successful one.",
+        "severity": "High",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// HoneytokenAccounts  list every decoy account, lowercase. Match is on the\n//   account name (SAM) or the full UPN, so either form works. Leave the\n//   placeholder in place and the rule relies solely on MDI honeytoken tagging.\nlet DetectionWindow     = 15m;\nlet HoneytokenAccounts  = dynamic([\n    \"ht-domainadmin-backup\"\n]);\nlet isHoneytoken = (name: string, upn: string)\n{\n    tolower(name) in (HoneytokenAccounts) or tolower(upn) in (HoneytokenAccounts)\n};\nunion isfuzzy=true\n  (SigninLogs\n     | where TimeGenerated > ago(DetectionWindow)\n     | extend UserPrincipalName = tolower(UserPrincipalName)\n     | extend SamName = tostring(split(UserPrincipalName, \"@\")[0])\n     | where isHoneytoken(SamName, UserPrincipalName)\n     | project TimeGenerated,\n               Source     = \"Entra ID sign-in\",\n               Account    = UserPrincipalName,\n               Outcome    = iff(ResultType == 0, \"Success\", strcat(\"Failure (\", tostring(ResultType), \")\")),\n               Detail     = strcat(ClientAppUsed, \" / \", AppDisplayName),\n               Host       = tostring(DeviceDetail.displayName),\n               IPAddress  = IPAddress,\n               Location   = strcat(tostring(LocationDetails.city), \", \", tostring(LocationDetails.countryOrRegion))),\n  (IdentityLogonEvents\n     | where TimeGenerated > ago(DetectionWindow)\n     | extend AccountUpnLower = tolower(coalesce(AccountUpn, strcat(AccountName, \"@\", AccountDomain)))\n     | where isHoneytoken(AccountName, AccountUpnLower)\n           or tostring(AdditionalFields) has \"oneytoken\"\n     | project TimeGenerated,\n               Source     = \"On-prem AD (MDI)\",\n               Account    = AccountUpnLower,\n               Outcome    = ActionType,\n               Detail     = strcat(coalesce(LogonType, \"\"), \" \", coalesce(Protocol, \"\")),\n               Host       = coalesce(DeviceName, TargetDeviceName),\n               IPAddress  = IPAddress,\n               Location   = coalesce(Location, \"\")),\n  (IdentityDirectoryEvents\n     | where TimeGenerated > ago(DetectionWindow)\n     | extend AccountUpnLower = tolower(coalesce(AccountUpn, strcat(AccountName, \"@\", AccountDomain))),\n              TargetUpnLower  = tolower(coalesce(TargetAccountUpn, \"\"))\n     | where isHoneytoken(AccountName, AccountUpnLower)\n           or isHoneytoken(TargetAccountDisplayName, TargetUpnLower)\n           or tostring(AdditionalFields) has \"oneytoken\"\n     | project TimeGenerated,\n               Source     = \"On-prem AD directory activity (MDI)\",\n               Account    = coalesce(iff(isempty(TargetUpnLower), \"\", TargetUpnLower), AccountUpnLower),\n               Outcome    = ActionType,\n               Detail     = coalesce(Protocol, \"\"),\n               Host       = coalesce(DeviceName, DestinationDeviceName),\n               IPAddress  = IPAddress,\n               Location   = coalesce(Location, \"\")),\n  (SecurityAlert\n     | where TimeGenerated > ago(DetectionWindow)\n     | where AlertName has \"oneytoken\"\n     | project TimeGenerated,\n               Source     = \"Defender for Identity alert\",\n               Account    = tolower(tostring(CompromisedEntity)),\n               Outcome    = AlertName,\n               Detail     = Description,\n               Host       = \"\",\n               IPAddress  = \"\",\n               Location   = \"\")\n| where isnotempty(Account)\n| extend AccountName      = tostring(split(Account, \"@\")[0]),\n         AccountUPNSuffix = tostring(split(Account, \"@\")[1])\n| extend Assessment = \"Honeytoken touched - no legitimate process authenticates as this identity. Treat as credential harvesting or directory enumeration until proven otherwise.\"\n| project TimeGenerated, Account, AccountName, AccountUPNSuffix, Source, Outcome,\n          Assessment, Detail, Host, IPAddress, Location\n| sort by TimeGenerated desc",
+        "queryFrequency": "PT15M",
+        "queryPeriod": "PT15M",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "CredentialAccess",
+          "Discovery",
+          "InitialAccess"
+        ],
+        "techniques": [
+          "T1078",
+          "T1087"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": true,
+            "lookbackDuration": "PT24H",
+            "matchingMethod": "Selected",
+            "groupByEntities": [
+              "Account"
+            ]
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Honeytoken {{Account}} touched - {{Outcome}}",
+          "alertDescriptionFormat": "Honeytoken account {{Account}} was involved in authentication activity observed by {{Source}}\n({{Outcome}}) from host {{Host}} / {{IPAddress}} {{Location}}. No legitimate process\nauthenticates as this identity.\n"
+        },
+        "customDetails": {
+          "Signal": "Source",
+          "Outcome": "Outcome",
+          "Detail": "Detail",
+          "Location": "Location"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "Account"
+              },
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              },
+              {
+                "identifier": "UPNSuffix",
+                "columnName": "AccountUPNSuffix"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Host"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/1c2bce63-42b2-5403-8af4-a9e7984c932e')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - generic or service account interactive logon from a new host",
+        "description": "An account whose name matches the generic/service naming pattern (svc-, shared-,\nadmin-, training-, kiosk-, scanner- and similar) performs an interactive logon\nfrom a host it has never been seen on in the preceding 14 days.\n\nTwo things make this interesting together. A genuine service account should not\nlog on interactively at all — it should authenticate as a service, a batch job or\nan application. And an account with no real owner spreading to a new endpoint is\nhow a shared credential propagates through an organisation: someone needed it,\nsomeone else gave it to them, and now it lives on another machine.\n\nThe 14-day baseline is what keeps this quiet. A service account that has always\nrun interactively from the same two jump boxes never fires. The alert is the\nchange, not the condition.\n\nAccounts with no baseline activity at all are deliberately excluded — a newly\ncreated account's first logon is provisioning, not spread. It will alert on its\nsecond distinct host instead.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// BaselineWindow  shorten to 7d in a fast-moving estate; anything under 7d\n//                 starts alerting on normal rotation between jump boxes.\n// GenericRx       trim terms that are legitimate naming convention in your\n//                 tenant before you tune anything else, or you will tune\n//                 thresholds around noise you could have deleted.\nlet DetectionWindow = 1h;\nlet BaselineWindow  = 14d;\nlet GenericRx = @\"(?i)(^|[._\\-])(svc|service|shared|generic|common|team|group|dept|admin|administrator|adm|test|tst|temp|tmp|training|train|demo|kiosk|lobby|frontdesk|reception|scanner|scan|printer|print|copier|fax|conf|conference|room|guest|intern|contractor|vendor|support|helpdesk|sql|oracle|backup|batch|task|sched|robot|bot|rpa|automation|integration|api|app|monitor|nagios|zabbix|splunk|jenkins|build|deploy)([._\\-]|[0-9]|@|$)\";\nlet ExcludedUsers = dynamic([\"none@example.invalid\"]);\nlet logons = materialize(\n    union isfuzzy=true\n      (SigninLogs\n         | where TimeGenerated > ago(BaselineWindow)\n         | where ResultType == 0\n         | extend UserPrincipalName = tolower(UserPrincipalName)\n         | extend Host = tostring(DeviceDetail.displayName)\n         | project TimeGenerated, UserPrincipalName, Host,\n                   Source    = \"Entra interactive\",\n                   LogonKind = strcat(ClientAppUsed, \" / \", AppDisplayName),\n                   IPAddress = IPAddress,\n                   Location  = strcat(tostring(LocationDetails.city), \", \", tostring(LocationDetails.countryOrRegion))),\n      (IdentityLogonEvents\n         | where TimeGenerated > ago(BaselineWindow)\n         | where ActionType == \"LogonSuccess\"\n         | where LogonType in (\"Interactive\", \"Remote interactive\")\n         | extend UserPrincipalName = tolower(coalesce(AccountUpn, strcat(AccountName, \"@\", AccountDomain)))\n         | extend Host = coalesce(DeviceName, TargetDeviceName)\n         | project TimeGenerated, UserPrincipalName, Host,\n                   Source    = \"On-prem AD (MDI)\",\n                   LogonKind = LogonType,\n                   IPAddress = IPAddress,\n                   Location  = coalesce(Location, \"\"))\n    | where isnotempty(UserPrincipalName) and isnotempty(Host)\n    | where not(UserPrincipalName has_any (ExcludedUsers))\n    | where UserPrincipalName matches regex GenericRx\n);\nlet baseline = logons\n    | where TimeGenerated between (ago(BaselineWindow) .. ago(DetectionWindow))\n    | summarize BaselineLogons = count() by UserPrincipalName, Host;\n// accounts that actually have a history - a brand new account's first logon is\n// provisioning, not spread, so it should not raise an incident\nlet establishedAccounts = baseline\n    | summarize KnownHosts = dcount(Host), HostList = make_set(Host, 25) by UserPrincipalName;\nlogons\n| where TimeGenerated > ago(DetectionWindow)\n| join kind=leftanti baseline on UserPrincipalName, Host\n| join kind=inner establishedAccounts on UserPrincipalName\n| summarize TimeGenerated  = max(TimeGenerated),\n            FirstSeenHere  = min(TimeGenerated),\n            Logons         = count(),\n            LogonKinds     = make_set(LogonKind, 6),\n            IPAddress      = any(IPAddress),\n            Location       = any(Location),\n            Source         = any(Source),\n            KnownHosts     = any(KnownHosts),\n            PreviousHosts  = any(HostList)\n    by UserPrincipalName, Host\n| extend Assessment = case(KnownHosts >= 5, strcat(\"Generic account already seen on \", tostring(KnownHosts), \" hosts has reached another - this credential is circulating\"),\n                           KnownHosts >= 2, \"Generic account spreading to an additional host - verify who was given it and why\",\n                           \"Generic account has left its usual host for the first time\")\n| extend AccountName      = tostring(split(UserPrincipalName, \"@\")[0]),\n         AccountUPNSuffix = tostring(split(UserPrincipalName, \"@\")[1])\n| project TimeGenerated, UserPrincipalName, AccountName, AccountUPNSuffix, Host,\n          Assessment, Source, Logons, LogonKinds, KnownHosts, PreviousHosts,\n          IPAddress, Location, FirstSeenHere\n| sort by KnownHosts desc, TimeGenerated desc",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P14D",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "LateralMovement",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1078.002",
+          "T1078.004"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "Selected",
+            "groupByEntities": [
+              "Account"
+            ]
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Generic account {{UserPrincipalName}} logged on interactively from new host {{Host}}",
+          "alertDescriptionFormat": "{{UserPrincipalName}} matches the generic/service account naming pattern and performed an\ninteractive logon from {{Host}}, which it has not been seen on in the preceding baseline.\nIt was already known on {{KnownHosts}} other hosts. {{Assessment}}\n"
+        },
+        "customDetails": {
+          "NewHost": "Host",
+          "KnownHostCount": "KnownHosts",
+          "PreviousHosts": "PreviousHosts",
+          "LogonKinds": "LogonKinds",
+          "Telemetry": "Source",
+          "Location": "Location"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserPrincipalName"
+              },
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              },
+              {
+                "identifier": "UPNSuffix",
+                "columnName": "AccountUPNSuffix"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "Host"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "IPAddress"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/b39319dc-3b0f-5356-bd9c-f2f8daed3d62')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - one MFA factor newly registered against a third account",
+        "description": "A single authentication factor — a phone number, an email address or an\nauthenticator device — becomes bound to a third distinct account, with the\nregistration that crossed that threshold occurring in this detection window.\n\nTwo accounts sharing a recovery factor is common and usually benign: an\nadministrator with a separate privileged identity, or a contractor with a second\ntenant account. Three is where the explanation stops being tidy. A factor\nregistered against three or more identities means one person can complete\nmulti-factor authentication for all of them, or that one phone is the recovery\npath for a set of accounts that are supposed to be independent.\n\nThis is the control-plane version of account sharing. It does not require anyone\nto have shared a password — whoever holds the factor can reset their way into\nevery account bound to it.\n\nPRIVACY NOTE: the alert carries the factor value, which may be a personal phone\nnumber or email address. That is what makes the alert actionable, but it means\nthese incidents inherit the sensitivity of the directory. Restrict access to the\nincident accordingly.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// MinAccountsPerFactor  3 is the intended setting. Drop to 2 only if you have\n//   already eliminated admin//priv account pairs, or this will be all noise.\n// BaselineWindow  the longest window the scheduled-rule engine allows is 14d.\n//   Factors bound to a third account more than 14 days apart are caught by the\n//   Credential Hygiene tab in the workbook, not by this rule.\nlet DetectionWindow      = 1h;\nlet BaselineWindow       = 14d;\nlet MinAccountsPerFactor = 3;\nlet registrations = materialize(\n    AuditLogs\n    | where TimeGenerated > ago(BaselineWindow)\n    | where OperationName has_any (\"security info\", \"StrongAuthentication\", \"authentication method\", \"Update user\")\n    | extend Target = tolower(tostring(TargetResources[0].userPrincipalName))\n    | where isnotempty(Target)\n    | mv-expand mp = TargetResources[0].modifiedProperties\n    | extend PropName = tostring(mp.displayName), NewVal = tostring(mp.newValue)\n    | where PropName has_any (\"PhoneNumber\", \"AlternativePhoneNumber\", \"StrongAuthenticationUserDetails\",\n                              \"StrongAuthenticationPhoneAppDetail\", \"Email\", \"VoiceOnlyPhoneNumber\")\n    | extend Raw = replace_string(replace_string(replace_string(NewVal, '\"', ''), '[', ''), ']', '')\n    | extend Method = trim(@\"[\\s\\\\]+\", Raw)\n    | where isnotempty(Method) and Method !in (\"\", \"null\", \"[]\")\n    | extend MethodType = case(PropName has \"PhoneApp\", \"Authenticator device\",\n                               PropName has \"Phone\",    \"Phone number\",\n                               PropName has \"Email\",    \"Email address\",\n                               PropName)\n    | extend Actor = tolower(tostring(InitiatedBy.user.userPrincipalName))\n    | project TimeGenerated, Target, Actor, MethodType, Method, OperationName, Result\n);\n// the account whose registration was most recent for each factor, resolved in\n// its own step - arg_max alongside other aggregates would prefix its output\n// columns and silently break the entity mapping\nlet latestPerFactor = registrations\n    | summarize arg_max(TimeGenerated, Target, MethodType) by Method\n    | project Method, LatestTarget = Target, LatestType = MethodType;\n// factors whose account count reached the threshold, where the most recent\n// registration landed in this run's window - so the alert fires on the change\nregistrations\n| summarize AccountsSharing = dcount(Target),\n            Accounts        = make_set(Target, 25),\n            Registrations   = count(),\n            Actors          = make_set_if(Actor, isnotempty(Actor), 10),\n            FirstSeen       = min(TimeGenerated),\n            LastSeen        = max(TimeGenerated)\n    by Method\n| where AccountsSharing >= MinAccountsPerFactor\n| where LastSeen > ago(DetectionWindow)\n| join kind=inner latestPerFactor on Method\n| extend Assessment = case(AccountsSharing >= 5, \"One factor now controls five or more accounts - a single person can complete MFA for all of them\",\n                           \"One factor now controls three or more accounts - past the point where an admin second-account pair explains it\")\n| extend UserPrincipalName = LatestTarget,\n         MethodType        = LatestType,\n         AccountName       = tostring(split(LatestTarget, \"@\")[0]),\n         AccountUPNSuffix  = tostring(split(LatestTarget, \"@\")[1])\n| extend SpanDays = round(todouble(datetime_diff('hour', LastSeen, FirstSeen)) / 24.0, 1)\n| project TimeGenerated = LastSeen, UserPrincipalName, AccountName, AccountUPNSuffix,\n          MethodType, Method, AccountsSharing, Assessment, Accounts, Registrations,\n          Actors, SpanDays, FirstSeen, LastSeen\n| sort by AccountsSharing desc",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "P14D",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "Persistence",
+          "CredentialAccess"
+        ],
+        "techniques": [
+          "T1098.005",
+          "T1556.006"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "AllEntities"
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "One {{MethodType}} now registered against {{AccountsSharing}} accounts",
+          "alertDescriptionFormat": "A single {{MethodType}} is now registered as an authentication factor against {{AccountsSharing}}\ndistinct accounts, the most recent being {{UserPrincipalName}}. {{Assessment}} Whoever holds\nthis factor can complete multi-factor authentication, or drive account recovery, for every\naccount bound to it.\n"
+        },
+        "customDetails": {
+          "FactorType": "MethodType",
+          "Factor": "Method",
+          "AccountsSharing": "AccountsSharing",
+          "Accounts": "Accounts",
+          "RegisteredBy": "Actors",
+          "Registrations": "Registrations",
+          "SpanDays": "SpanDays"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "FullName",
+                "columnName": "UserPrincipalName"
+              },
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              },
+              {
+                "identifier": "UPNSuffix",
+                "columnName": "AccountUPNSuffix"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+      "apiVersion": "2023-02-01",
+      "name": "[concat(parameters('workspaceName'), '/Microsoft.SecurityInsights/f14c7d37-62c3-5509-a3bd-bb378248608f')]",
+      "kind": "Scheduled",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "Account sharing - local administrator authenticating over the network to many hosts",
+        "description": "A local (non-domain) account with local administrator rights authenticates over\nthe network to five or more distinct devices within an hour.\n\nA local account is, by definition, local. It exists in the SAM database of one\nmachine. When the same local administrator name and secret authenticates across\na fleet, only one thing is happening: that password is identical on every one of\nthose machines, and somebody — an administrator, a deployment image, or an\nattacker who dumped it once — is using that fact.\n\nThis is the precondition for classic lateral movement. It is also the single\nmost common finding in environments that have not deployed LAPS, where a build\nimage set the same local administrator password on every endpoint years ago and\nnobody has changed it since.\n\nDistinguishing benign from malicious: a scheduled management sweep hits the same\ntarget list at the same time every day and comes from one source host. Credential\nreuse by an operator or an adversary looks irregular, comes from a workstation,\nand often follows a credential-dumping alert. The SourceHosts and LogonTypes\nfields are what tell them apart.\n\nIf the finding is benign, the remediation is still the same: deploy LAPS, or\nWindows LAPS in Entra, so the password is unique per device.\n\nGrouping note: the rule keys on the account NAME alone. A local account's domain\ncomponent is the machine it lives on, and its SID is machine-specific, so keying\non either would place every host in its own bucket and the fan-out could never\nappear. The distinct-SID count is reported instead as corroboration — more than\none SID confirms these are genuinely separate SAM accounts sharing a name.",
+        "severity": "Medium",
+        "enabled": true,
+        "query": "// --- tuning -------------------------------------------------------------\n// MinTargetDevices  5 per hour is a deliberate floor. Lower it to 3 in a small\n//   estate. Raise it if a management tool legitimately sweeps the fleet and you\n//   would rather exclude the pattern than the account.\n// ExcludedAccounts  name the management and imaging accounts here rather than\n//   raising the threshold, so a genuine credential sweep still surfaces.\nlet DetectionWindow   = 1h;\nlet MinTargetDevices  = 5;\nlet ExcludedAccounts  = dynamic([\"none-such-account\"]);\nlet BuiltInNonHuman   = dynamic([\"system\", \"local service\", \"network service\", \"anonymous logon\",\n                                 \"dwm-1\", \"dwm-2\", \"umfd-0\", \"umfd-1\"]);\nDeviceLogonEvents\n| where TimeGenerated > ago(DetectionWindow)\n| where ActionType == \"LogonSuccess\"\n| where LogonType in (\"Network\", \"RemoteInteractive\", \"Batch\", \"Service\")\n| where IsLocalAdmin == true\n| where isnotempty(RemoteIP) or isnotempty(RemoteDeviceName)\n| where isnotempty(AccountName)\n| extend AccountNameLower = tolower(AccountName)\n| where AccountNameLower !in (BuiltInNonHuman)\n| where AccountNameLower !in (ExcludedAccounts)\n// A local account authenticates against the SAM of the machine itself, so its\n// account domain is that machine's own short name. A domain account carries the\n// NetBIOS domain instead. This comparison is what separates the two; matching on\n// \"no dot in the domain\" does not, because NetBIOS domain names have no dot.\n| extend DeviceShortName = tolower(tostring(split(DeviceName, \".\")[0]))\n| where tolower(AccountDomain) == DeviceShortName\n// Group by the account NAME alone, never by domain\\name. For a local account the\n// domain component is the machine, so grouping on it would place every host in\n// its own bucket and the fan-out this rule exists to find could never appear.\n// The local SID varies per machine for the same reason and is collected, not keyed on.\n| summarize TimeGenerated   = max(TimeGenerated),\n            Logons          = count(),\n            TargetDevices   = dcount(DeviceName),\n            SourceHosts     = dcountif(RemoteDeviceName, isnotempty(RemoteDeviceName)),\n            SourceIPs       = dcountif(RemoteIP, isnotempty(RemoteIP)),\n            DistinctSids    = dcountif(AccountSid, isnotempty(AccountSid)),\n            TargetList      = make_set(DeviceName, 25),\n            SourceList      = make_set_if(RemoteDeviceName, isnotempty(RemoteDeviceName), 25),\n            SourceIPList    = make_set_if(RemoteIP, isnotempty(RemoteIP), 25),\n            LogonTypes      = make_set(LogonType, 6),\n            FirstSeen       = min(TimeGenerated)\n    by AccountName = AccountNameLower\n| where TargetDevices >= MinTargetDevices\n| extend Assessment = case(TargetDevices >= 20, \"Local admin credential used across the estate - identical local password fleet-wide, and something is exercising it\",\n                           TargetDevices >= 10, \"Local admin credential sprayed across many hosts - classic shared-local-password lateral movement\",\n                           \"Local admin credential reused across several hosts within the hour\")\n| extend Pattern = case(SourceHosts <= 1, \"Single source host - consistent with a management sweep, confirm the tool and schedule\",\n                        SourceHosts >= 5, \"Many source hosts - the credential itself is circulating, not one tool using it\",\n                        \"Few source hosts - verify each is an administrative jump point\")\n// DistinctSids > 1 confirms these really are separate per-machine local accounts\n// sharing a name and a secret, rather than one account seen repeatedly.\n| extend SidEvidence = iff(DistinctSids > 1,\n                           strcat(tostring(DistinctSids), \" distinct local SIDs - separate SAM accounts sharing a name and secret\"),\n                           \"Single SID - one account, verify whether the domain filter admitted a domain principal\")\n| extend FirstTargetHost = tostring(TargetList[0]),\n         FirstSourceIP   = tostring(SourceIPList[0])\n| project TimeGenerated, AccountName, Assessment, Pattern, SidEvidence,\n          TargetDevices, SourceHosts, SourceIPs, DistinctSids, Logons, LogonTypes,\n          TargetList, SourceList, SourceIPList, FirstTargetHost, FirstSourceIP, FirstSeen\n| sort by TargetDevices desc",
+        "queryFrequency": "PT1H",
+        "queryPeriod": "PT1H",
+        "triggerOperator": "gt",
+        "triggerThreshold": 0,
+        "suppressionDuration": "PT1H",
+        "suppressionEnabled": false,
+        "tactics": [
+          "LateralMovement",
+          "CredentialAccess",
+          "Persistence"
+        ],
+        "techniques": [
+          "T1021.002",
+          "T1078.003",
+          "T1550.002"
+        ],
+        "incidentConfiguration": {
+          "createIncident": true,
+          "groupingConfiguration": {
+            "enabled": true,
+            "reopenClosedIncident": false,
+            "lookbackDuration": "P1D",
+            "matchingMethod": "Selected",
+            "groupByEntities": [
+              "Account"
+            ]
+          }
+        },
+        "eventGroupingSettings": {
+          "aggregationKind": "AlertPerResult"
+        },
+        "alertDetailsOverride": {
+          "alertDisplayNameFormat": "Local admin {{AccountName}} authenticated to {{TargetDevices}} hosts",
+          "alertDescriptionFormat": "Local administrator account \"{{AccountName}}\" authenticated over the network to {{TargetDevices}}\ndistinct devices from {{SourceHosts}} source hosts within the detection window.\n{{Assessment}} {{Pattern}} {{SidEvidence}}\n"
+        },
+        "customDetails": {
+          "TargetDeviceCount": "TargetDevices",
+          "SourceHostCount": "SourceHosts",
+          "DistinctLocalSids": "DistinctSids",
+          "TargetDevices": "TargetList",
+          "SourceHosts": "SourceList",
+          "LogonTypes": "LogonTypes",
+          "Pattern": "Pattern",
+          "SidEvidence": "SidEvidence"
+        },
+        "entityMappings": [
+          {
+            "entityType": "Account",
+            "fieldMappings": [
+              {
+                "identifier": "Name",
+                "columnName": "AccountName"
+              }
+            ]
+          },
+          {
+            "entityType": "Host",
+            "fieldMappings": [
+              {
+                "identifier": "HostName",
+                "columnName": "FirstTargetHost"
+              }
+            ]
+          },
+          {
+            "entityType": "IP",
+            "fieldMappings": [
+              {
+                "identifier": "Address",
+                "columnName": "FirstSourceIP"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "rulesDeployed": {
+      "type": "int",
+      "value": 6
+    }
+  }
+}
